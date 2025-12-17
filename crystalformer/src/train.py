@@ -28,6 +28,20 @@ def scatter(x: jnp.ndarray, retain_axis=False) -> jnp.ndarray:
     return shard(x)
 
 
+@jax.jit
+def add_composition_with_cfg_drop(key, data, cfg_drop_prob):
+    # compute composition vector and apply classifer-free guidance training
+    A, W = data[3], data[4]
+    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
+    # drop composition with probability cfg_drop_prob, set to zero vector
+    key, subkey = jax.random.split(key)
+    drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
+    composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
+    data = (composition,) + data  # reconstruct data tuple with composition included
+
+    return data
+
+
 def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, batchsize, train_data, valid_data, path, val_interval, cfg_drop_prob):
     num_devices = jax.local_device_count()
     batch_per_device = batchsize // num_devices
@@ -72,16 +86,7 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
             start_idx = batch_idx * batchsize
             end_idx = min(start_idx + batchsize, num_samples)
             data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], train_data)
-
-            # compute composition vector and apply classifer-free guidance training
-            A, W = data[3], data[4]
-            composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
-            # drop composition with probability cfg_drop_prob, set to zero vector
-            key, subkey = jax.random.split(key)
-            drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
-            composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
-            data = (composition,) + data  # reconstruct data tuple with composition included
-
+            data = add_composition_with_cfg_drop(key, data, cfg_drop_prob)
             data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
             
             keys, subkeys = p_split(keys)
@@ -110,16 +115,7 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
                 start_idx = batch_idx * batchsize
                 end_idx = min(start_idx + batchsize, num_samples)
                 data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], valid_data)
-
-                # compute composition vector and apply classifer-free guidance training
-                A, W = data[3], data[4]
-                composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
-                # drop composition with probability cfg_drop_prob, set to zero vector
-                key, subkey = jax.random.split(key)
-                drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
-                composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
-                data = (composition,) + data  # reconstruct data tuple with composition included
-
+                data = add_composition_with_cfg_drop(key, data, cfg_drop_prob)
                 data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
 
                 keys, subkeys = p_split(keys)
