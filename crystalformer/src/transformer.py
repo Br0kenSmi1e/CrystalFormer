@@ -27,7 +27,7 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
     def network(composition, G, XYZ, A, W, M, is_train):
         '''
         Args:
-            composition: (atom_types, )
+            composition: (atom_types, ) - Can be all zeros for unconditional generation
             G: scalar integer for space group id 1-230
             XYZ: (n, 3) fractional coordinates
             A: (n, )  element type 
@@ -54,7 +54,12 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         a_embedding_table = hk.get_parameter('a_embedding_table', [atom_types, embed_size], init=initializer)
 
         a_embeddings = a_embedding_table[A] # (n, embed_size)
-        c_embeddings = (a_embedding_table * composition[:, None]).sum(axis=0) # (embed_size, ) 
+
+        # compute composition embeddings in two ways: conditional and unconditional
+        c_embeddings_uncond = hk. get_parameter('c_embedding_uncond', [embed_size], init=initializer)
+        is_comp_provided = (jnp.sum(composition) > 0)
+        c_embeddings_cond = (a_embedding_table * composition[:, None]).sum(axis=0)
+        c_embeddings = jnp.where(is_comp_provided, c_embeddings_cond, c_embeddings_uncond)
 
         g_logit = hk.Sequential([hk.Linear(h0_size, w_init=initializer),
                                   jax.nn.gelu,
@@ -205,8 +210,13 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         a_logit = a_logit + jnp.where(a_mask, -1e10, 0.0)
         a_logit -= jax.scipy.special.logsumexp(a_logit, axis=1)[:, None] # normalization
 
-        # (5) atom should already in the formula
-        a_mask = jnp.where(composition==0, jnp.ones((atom_types)), jnp.zeros((atom_types))).reshape(1, atom_types).repeat(n, axis=0)  
+        # (5) atom should already in the formula (Conditional Generation vs Unconditional Generation)
+        # Create the mask that forbids atoms not in the composition (1 = banned, 0 = allowed)
+        # If composition is NOT provided, we set the mask to all zeros (allow everything).
+        comp_constraint_mask = jnp.where(composition==0, 1.0, 0.0) # (atom_types,)
+        effective_mask = jnp.where(is_comp_provided, comp_constraint_mask, jnp.zeros_like(comp_constraint_mask))
+        a_mask = effective_mask.reshape(1, atom_types).repeat(n, axis=0)
+
         a_mask = a_mask.at[:, 0].set(0) # (n, atom_types) # mask = 1 for those locations to be masked out
         a_logit = a_logit + jnp.where(a_mask, -1e10, 0.0)
         a_logit -= jax.scipy.special.logsumexp(a_logit, axis=1)[:, None] # normalization
