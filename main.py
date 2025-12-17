@@ -30,6 +30,7 @@ group.add_argument('--weight_decay', type=float, default=0.0, help='weight decay
 group.add_argument('--clip_grad', type=float, default=1.0, help='clip gradient')
 group.add_argument("--optimizer", type=str, default="adam", choices=["none", "adam", "adamw"], help="optimizer type")
 group.add_argument("--val_interval", type=int, default=100, help="validation interval")
+group.add_argument("--cfg_drop_prob", type=float, default=0.5, help="classifer-free guidance drop probability")
 
 group.add_argument("--folder", default="../data/", help="the folder to save data")
 group.add_argument("--restore_path", default=None, help="checkpoint path or file")
@@ -123,7 +124,7 @@ loss_fn, logp_fn = make_loss_fn(args.n_max, args.atom_types, args.wyck_types, ar
 
 print("\n========== Prepare logs ==========")
 if args.optimizer != "none" or args.restore_path is None:
-    output_path = args.folder + args.optimizer+"_bs_%d_lr_%g_decay_%g_clip_%g" % (args.batchsize, args.lr, args.lr_decay, args.clip_grad) \
+    output_path = args.folder + args.optimizer+"_cfg_%g_bs_%d_lr_%g_decay_%g_clip_%g" % (args.cfg_drop_prob, args.batchsize, args.lr, args.lr_decay, args.clip_grad) \
                    + '_A_%g_W_%g_N_%g'%(args.atom_types, args.wyck_types, args.n_max) \
                    + ("_wd_%g"%(args.weight_decay) if args.optimizer == "adamw" else "") \
                    + ('_a_%g_w_%g_l_%g'%(args.lamb_a, args.lamb_w, args.lamb_l)) \
@@ -170,7 +171,7 @@ if args.optimizer != "none":
         pass 
  
     print("\n========== Start training ==========")
-    params, opt_state = train(key, optimizer, opt_state, loss_fn, params, epoch_finished, args.epochs, args.batchsize, train_data, valid_data, output_path, args.val_interval)
+    params, opt_state = train(key, optimizer, opt_state, loss_fn, params, epoch_finished, args.epochs, args.batchsize, train_data, valid_data, output_path, args.val_interval, args.cfg_drop_prob)
 
 else:
 

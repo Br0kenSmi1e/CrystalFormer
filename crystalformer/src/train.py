@@ -7,6 +7,7 @@ import math
 
 from crystalformer.src.utils import shuffle
 import crystalformer.src.checkpoint as checkpoint
+from crystalformer.src.formula import find_composition_vector
 
 
 shard = jax.pmap(lambda x: x)
@@ -27,8 +28,7 @@ def scatter(x: jnp.ndarray, retain_axis=False) -> jnp.ndarray:
     return shard(x)
 
 
-def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, batchsize, train_data, valid_data, path, val_interval):
-           
+def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, batchsize, train_data, valid_data, path, val_interval, cfg_drop_prob):
     num_devices = jax.local_device_count()
     batch_per_device = batchsize // num_devices
     shape_prefix = (num_devices, batch_per_device)
@@ -42,8 +42,8 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
 
     @partial(jax.pmap, axis_name="p", in_axes=(None, 0, None, 0), out_axes=(None, None, 0),)
     def update(params, key, opt_state, data):
-        G, L, X, A, W = data
-        value, grad = jax.value_and_grad(loss_fn, has_aux=True)(params, key, G, L, X, A, W, True)
+        composition, G, L, X, A, W = data
+        value, grad = jax.value_and_grad(loss_fn, has_aux=True)(params, key, composition, G, L, X, A, W, True)
         grad = jax.lax.pmean(grad, axis_name="p")
         value = jax.lax.pmean(value, axis_name="p")
         updates, opt_state = optimizer.update(grad, opt_state, params)
@@ -72,6 +72,16 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
             start_idx = batch_idx * batchsize
             end_idx = min(start_idx + batchsize, num_samples)
             data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], train_data)
+
+            # compute composition vector and apply classifer-free guidance training
+            A, W = data[3], data[4]
+            composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
+            # drop composition with probability cfg_drop_prob, set to zero vector
+            key, subkey = jax.random.split(key)
+            drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
+            composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
+            data = (composition,) + data  # reconstruct data tuple with composition included
+
             data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
             
             keys, subkeys = p_split(keys)
@@ -100,11 +110,21 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
                 start_idx = batch_idx * batchsize
                 end_idx = min(start_idx + batchsize, num_samples)
                 data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], valid_data)
+
+                # compute composition vector and apply classifer-free guidance training
+                A, W = data[3], data[4]
+                composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
+                # drop composition with probability cfg_drop_prob, set to zero vector
+                key, subkey = jax.random.split(key)
+                drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
+                composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
+                data = (composition,) + data  # reconstruct data tuple with composition included
+
                 data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
 
                 keys, subkeys = p_split(keys)
-                loss, aux = jax.pmap(loss_fn, in_axes=(None, 0, 0, 0, 0, 0, 0),
-                                     static_broadcasted_argnums=7)(params, subkeys, *data, False)
+                loss, aux = jax.pmap(loss_fn, in_axes=(None, 0, 0, 0, 0, 0, 0, 0),
+                                     static_broadcasted_argnums=8)(params, subkeys, *data, False)
                 valid_loss, valid_aux = jax.tree_util.tree_map(
                         lambda acc, i: acc + jnp.mean(i),
                         (valid_loss, valid_aux), 
