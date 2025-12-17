@@ -6,7 +6,6 @@ from functools import partial
 from crystalformer.src.von_mises import von_mises_logpdf
 from crystalformer.src.lattice import make_lattice_mask
 from crystalformer.src.wyckoff import mult_table, fc_mask_table
-from crystalformer.src.formula import find_composition_vector 
 
 
 def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0, lamb_w=1.0, lamb_l=1.0):
@@ -40,8 +39,8 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
 
         return logp_x
 
-    @partial(jax.vmap, in_axes=(None, None, 0, 0, 0, 0, 0, None), out_axes=0) # batch 
-    def logp_fn(params, key, G, L, XYZ, A, W, is_train):
+    @partial(jax.vmap, in_axes=(None, None, 0, 0, 0, 0, 0, 0, None), out_axes=0) # batch 
+    def logp_fn(params, key, composition, G, L, XYZ, A, W, is_train):
         '''
         G: scalar 
         L: (6,) [a, b, c, alpha, beta, gamma] 
@@ -52,9 +51,6 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
 
         num_sites = jnp.sum(A!=0)
         M = mult_table[G-1, W]  # (n_max,) multplicities
-        #num_atoms = jnp.sum(M)
-
-        composition = find_composition_vector(A, M) # (atom_types, )
 
         g_logit, h = transformer(params, key, composition, G, XYZ, A, W, M, is_train) # (5*n_max+1, ...)
         w_logit = h[0::5, :wyck_types] # (n_max+1, wyck_types) 
@@ -92,8 +88,8 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
     # This is a useful heuristic for transformers.
     # @partial(jax.checkpoint, policy=jax.checkpoint_policies.offload_dot_with_no_batch_dims, static_argnums=(7,))
     # @partial(jax.checkpoint, policy=jax.checkpoint_policies.dots_with_no_batch_dims_saveable, static_argnums=(7,))
-    def loss_fn(params, key, G, L, XYZ, A, W, is_train):
-        logp_g, logp_w, logp_xyz, logp_a, logp_l = logp_fn(params, key, G, L, XYZ, A, W, is_train)
+    def loss_fn(params, key, composition, G, L, XYZ, A, W, is_train):
+        logp_g, logp_w, logp_xyz, logp_a, logp_l = logp_fn(params, key, composition, G, L, XYZ, A, W, is_train)
 
         loss_g = -jnp.mean(logp_g)
         loss_w = -jnp.mean(logp_w)
@@ -116,9 +112,11 @@ def topk_recall(logp_g, y, ks=(1,10,30,40)):
 if __name__=='__main__':
     from utils import GLXYZAW_from_file
     from transformer import make_transformer
+    from crystalformer.src.formula import find_composition_vector
+
     atom_types = 119
-    n_max = 20
-    wyck_types = 20
+    n_max = 21
+    wyck_types = 28
     Nf = 5
     Kx = 16
     Kl  = 4
@@ -132,9 +130,12 @@ if __name__=='__main__':
     params, transformer = make_transformer(key, Nf, Kx, Kl, n_max, 128, 4, 4, 8, 16, 16, atom_types, wyck_types, dropout_rate) 
  
     loss_fn, _ = make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer)
+
+    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
+    print("composition:", composition.shape)
     
-    value = jax.jit(loss_fn, static_argnums=7)(params, key, G[:1], L[:1], XYZ[:1], A[:1], W[:1], True)
+    value = jax.jit(loss_fn, static_argnums=8)(params, key, composition[:1], G[:1], L[:1], XYZ[:1], A[:1], W[:1], True)
     print (value)
 
-    value = jax.jit(loss_fn, static_argnums=7)(params, key, G[:1], L[:1], XYZ[:1]+1.0, A[:1], W[:1], True)
+    value = jax.jit(loss_fn, static_argnums=8)(params, key, composition[:1], G[:1], L[:1], XYZ[:1]+1.0, A[:1], W[:1], True)
     print (value)
