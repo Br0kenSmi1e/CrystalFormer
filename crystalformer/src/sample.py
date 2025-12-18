@@ -72,6 +72,7 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
             composition > 0,                 # conditional
             jnp.ones((atom_types,), bool)     # unconditional
         )
+        atom_mask = jnp.where(atom_mask, 1, 0)
         atom_mask = atom_mask.at[0].set(1) # mask = 1 for allowed elements
            
         def body_fn(i, state):
