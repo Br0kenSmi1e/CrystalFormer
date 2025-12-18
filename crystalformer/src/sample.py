@@ -66,7 +66,12 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
     @partial(jax.jit, static_argnums=2)
     def sample_crystal(key, params, batchsize, composition):
 
-        atom_mask = jnp.where(composition>0, jnp.ones((atom_types)), jnp.zeros((atom_types)))
+        is_comp_provided = jnp.sum(composition) > 0
+        atom_mask = jnp.where(
+            is_comp_provided,
+            composition > 0,                 # conditional
+            jnp.ones((atom_types,), bool)     # unconditional
+        )
         atom_mask = atom_mask.at[0].set(1) # mask = 1 for allowed elements
            
         def body_fn(i, state):

@@ -179,8 +179,11 @@ else:
     jax.config.update("jax_enable_x64", True) # to get off compilation warning, and to prevent sample nan lattice 
     #FYI, the error was [Compiling module extracted] Very slow compile? If you want to file a bug, run with envvar XLA_FLAGS=--xla_dump_to=/tmp/foo and attach the results.
 
-    composition = formula_string_to_composition_vector(args.formula)
-    print ('composition vector of', args.formula)
+    if args.formula is not None:
+        composition = formula_string_to_composition_vector(args.formula)
+        print ('composition vector of', args.formula)
+    else:
+        composition = jnp.zeros(args.atom_types)
     print (composition)
     if args.spacegroup is None: 
         if args.K >0:
@@ -198,7 +201,10 @@ else:
     num_batches = math.ceil(args.num_samples / args.batchsize)
 
     name, extension = args.output_filename.rsplit('.', 1)
-    filename = os.path.join(output_path, f"{name}_{args.formula}.{extension}")
+    filename = os.path.join(
+        output_path,
+        f"{name}{'' if args.formula is None else f'_{args.formula}'}.{extension}"
+    )
     for batch_idx in range(num_batches):
         start_idx = batch_idx * args.batchsize
         end_idx = min(start_idx + args.batchsize, args.num_samples)
@@ -242,7 +248,9 @@ else:
             for g, l in zip(G, L):
                 print (g, l)
 
-        logp_g, logp_w, logp_xyz, logp_a, logp_l = jax.jit(logp_fn, static_argnums=7)(params, key, G, L, XYZ, A, W, False)
+        # repeat composition for batch
+        composition = composition[None, :].repeat(args.batchsize, axis=0)
+        logp_g, logp_w, logp_xyz, logp_a, logp_l = jax.jit(logp_fn, static_argnums=8)(params, key, composition, G, L, XYZ, A, W, False)
 
         data['logp_g'] = np.array(logp_g).tolist()
         data['logp_w'] = np.array(logp_w).tolist()
