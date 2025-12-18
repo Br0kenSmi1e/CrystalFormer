@@ -8,3 +8,4 @@ experimental/
 *.egg-info/
 build/
 !imgs/*.png
+.vscode/

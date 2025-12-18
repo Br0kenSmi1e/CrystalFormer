@@ -141,7 +141,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root_path',  default='/data/zdcao/crystal_gpt/dataset/mp_20/symm_data/')
-    parser.add_argument('--filename', default='out_structure.csv')
+    parser.add_argument('--filename', default='output_struct.csv')
     parser.add_argument('--label', default='')
     parser.add_argument('--num_io_process', type=int, default=40, help='number of process used in multiprocessing io')
     args = parser.parse_args()
