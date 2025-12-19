@@ -78,14 +78,21 @@ def main(args):
         print("Composition vector:", composition)
         key, subkey = jax.random.split(key)
         G, XYZ, A, W, M, L = sample_crystal(subkey, params, args.batchsize, composition)
-        atoms_list = [get_atoms_from_GLXYZAW(G[i], L[i], XYZ[i], A[i], W[i]) for i in range(args.batchsize)]
-        structures = [ase_adaptor.get_structure(atoms_list[i]) for i in range(args.batchsize)]
+        structures = []
+        for i in range(args.batchsize):
+            try: 
+                atoms = get_atoms_from_GLXYZAW(G[i], L[i], XYZ[i], A[i], W[i])
+                s = ase_adaptor.get_structure(atoms) 
+                structures.append(s)
+            except Exception as e:
+                print(f"Error in getting atoms for sample {i}: {e}")
+                continue
         # count how many compoisitons are matched
         composition = [s.composition.reduced_composition for s in structures]
         # count how many compoisitons match formula
         print(f"{sum([c == Composition(formula).reduced_composition for c in composition])} out of {len(composition)} match the formula")
         print("Sampled compositions:", composition)
-        is_matched_list[idx] = any([matcher.fit(test_structures[idx], structures[i]) for i in range(args.batchsize)])
+        is_matched_list[idx] = any([matcher.fit(test_structures[idx], structures[i]) for i in range(len(structures))])
         print("Formula:", formula, "Matched:", is_matched_list[idx])
 
     print("\n========== Summary ==========")
