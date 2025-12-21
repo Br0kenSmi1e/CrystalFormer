@@ -18,30 +18,45 @@ from crystalformer.reinforce.reward import get_atoms_from_GLXYZAW
 
 def main(args):
     print("========== Load test structures ==========")
-    # selected formulas for evaluation from mp20 testset (see DiffCSP paper for details)
-    formula_list = ["Co2Sb2", "Sr2O4", "AlAg4", "YMg3", "Cr4Si4",
-                    "Sn4Pd4", "Ag6O2", "Co4B2", "Ba2Cd6", "Bi2F8",
-                    "KZnF3", "Cr3CuO8", "Bi4S4Cl4", "Si2(CN2)4", "Hg2S2O8"
-                   ]
-    formula_list = [Composition(f).reduced_composition.formula for f in formula_list]
-    
-    test_data = pd.read_csv(args.test_path)
-    comp_list = [Composition(test_data.iloc[i]['pretty_formula']).reduced_composition for i in range(len(test_data))]
-    test_data['comp'] = comp_list
+    if args.benchmark == "diffcsp":
+        print("Use DiffCSP 15 compounds benchmark for evaluation.")
+        # selected formulas for evaluation from mp20 testset (see DiffCSP paper for details)
+        formula_list = ["Co2Sb2", "Sr2O4", "AlAg4", "YMg3", "Cr4Si4",
+                        "Sn4Pd4", "Ag6O2", "Co4B2", "Ba2Cd6", "Bi2F8",
+                        "KZnF3", "Cr3CuO8", "Bi4S4Cl4", "Si2(CN2)4", "Hg2S2O8"
+                    ]
+        formula_list = [Composition(f).reduced_composition.formula for f in formula_list]
+        
+        test_data = pd.read_csv(args.test_path)
+        comp_list = [Composition(test_data.iloc[i]['pretty_formula']).reduced_composition for i in range(len(test_data))]
+        test_data['comp'] = comp_list
 
-    test_structures = []
-    for formula in formula_list:
-        comp = Composition(formula).reduced_composition
-        subdata = test_data[test_data['comp']==comp]
-        if len(subdata)==0:
-            print("No test structure found for formula:", formula)
-            continue
-        elif len(subdata)>1:
-            print("Multiple test structures found for formula:", formula, ". Use the first one.")
-        else:
-            pass
-        struct = Structure.from_str(subdata.iloc[0]['cif'], fmt='cif')
-        test_structures.append(struct)
+        test_structures = []
+        for formula in formula_list:
+            comp = Composition(formula).reduced_composition
+            subdata = test_data[test_data['comp']==comp]
+            if len(subdata)==0:
+                print("No test structure found for formula:", formula)
+                continue
+            elif len(subdata)>1:
+                print("Multiple test structures found for formula:", formula, ". Use the first one.")
+            else:
+                pass
+            struct = Structure.from_str(subdata.iloc[0]['cif'], fmt='cif')
+            test_structures.append(struct)
+
+    elif args.benchmark == "mp20":
+        print("Use full MP20 testset for evaluation.")
+        test_data = pd.read_csv(args.test_path)
+
+        formula_list = test_data["pretty_formula"].tolist()
+        test_structures = [
+            Structure.from_str(cif, fmt="cif")
+            for cif in test_data["cif"]
+        ]
+    
+    else:
+        raise ValueError("Unknown benchmark:", args.benchmark)
     
     print(len(test_structures), "test structures loaded.")
 
@@ -82,17 +97,21 @@ def main(args):
         for i in range(args.batchsize):
             try: 
                 atoms = get_atoms_from_GLXYZAW(G[i], L[i], XYZ[i], A[i], W[i])
-                s = ase_adaptor.get_structure(atoms) 
-                structures.append(s)
+                structures.append(ase_adaptor.get_structure(atoms)) 
             except Exception as e:
                 print(f"Error in getting atoms for sample {i}: {e}")
-                continue
-        # count how many compoisitons are matched
-        composition = [s.composition.reduced_composition for s in structures]
+
+        compositions = [s.composition.reduced_composition for s in structures]
+
         # count how many compoisitons match formula
-        print(f"{sum([c == Composition(formula).reduced_composition for c in composition])} out of {len(composition)} match the formula")
-        print("Sampled compositions:", composition)
-        is_matched_list[idx] = any([matcher.fit(test_structures[idx], structures[i]) for i in range(len(structures))])
+        print(f"{sum([c == Composition(formula).reduced_composition for c in compositions])} out of {len(compositions)} match the formula")
+        print("Sampled compositions:", compositions)
+        target_comp = Composition(formula).reduced_composition
+        test_s = test_structures[idx]
+        is_matched_list[idx] = any(
+            c == target_comp and matcher.fit(s, test_s)
+            for c, s in zip(compositions, structures)
+        )
         print("Formula:", formula, "Matched:", is_matched_list[idx])
 
     print("\n========== Summary ==========")
@@ -101,12 +120,13 @@ def main(args):
 
     # save results as json in the restore_path
     results = {
+        "benchmark": args.benchmark,
         "formula_list": formula_list,
         "is_matched_list": is_matched_list,
         "overall_matched_rate": sum(is_matched_list)/len(is_matched_list),
-        "batchsize": args.batchsize
+        "top-k": args.batchsize
     }
-    results_filename = os.path.join(args.restore_path, "eval_csp.json")
+    results_filename = os.path.join(args.restore_path, f"eval_csp_{args.benchmark}.json")
     with open(results_filename, 'w') as f:
         json.dump(results, f, indent=4)
     print("Results saved to %s" %results_filename)
@@ -119,6 +139,7 @@ if __name__=='__main__':
     parser.add_argument("--restore_path", default="./experimental/adam_cfg_0.5_bs_100_lr_1e-05_decay_0_clip_1_A_119_W_28_N_21_a_1_w_1_l_1_Nf_5_Kx_16_Kl_4_h0_256_l_4_H_8_k_32_m_256_e_256_drop_0.3_0.3/", help="")
     parser.add_argument("--test_path", default='/home/user_zdcao/private/datafile/crystal_gpt/dataset/mp_20/test.csv')
     parser.add_argument("--batchsize", type=int, default=20, help="batch size")
+    parser.add_argument("--benchmark", type=str, default="diffcsp", choices=["diffcsp", "mp20"], help="which benchmark to use for evaluation")
 
     group = parser.add_argument_group('physics parameters')
     group.add_argument('--n_max', type=int, default=21, help='The maximum number of atoms in the cell')
