@@ -1,3 +1,5 @@
+import os
+import json
 import math
 import jax 
 import jax.numpy as jnp
@@ -92,6 +94,16 @@ def main(args):
                  total_recall
                  ) 
     print ('recall on validation data', total_recall)
+
+    # save results as json in the restore_path  
+    results = {
+        f"top-{k}": float(total_recall[k]) for k in ks
+    }
+    results_filename = os.path.join(args.restore_path, "eval_recall.json")
+    with open(results_filename, 'w') as f:
+        json.dump(results, f, indent=4)
+    print("Results saved to %s" %results_filename)
+
 
 if __name__=='__main__':
 
