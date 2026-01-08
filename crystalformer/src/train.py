@@ -34,8 +34,7 @@ def add_composition_with_cfg_drop(key, data, cfg_drop_prob):
     A, W = data[3], data[4]
     composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
     # drop composition with probability cfg_drop_prob, set to zero vector
-    key, subkey = jax.random.split(key)
-    drop_mask = jax.random.uniform(subkey, (composition.shape[0],)) < cfg_drop_prob
+    drop_mask = jax.random.uniform(key, (composition.shape[0],)) < cfg_drop_prob
     composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
     data = (composition,) + data  # reconstruct data tuple with composition included
 
@@ -86,7 +85,8 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
             start_idx = batch_idx * batchsize
             end_idx = min(start_idx + batchsize, num_samples)
             data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], train_data)
-            data = add_composition_with_cfg_drop(key, data, cfg_drop_prob)
+            key, subkey = jax.random.split(key)
+            data = add_composition_with_cfg_drop(subkey, data, cfg_drop_prob)
             data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
             
             keys, subkeys = p_split(keys)
@@ -115,7 +115,8 @@ def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, ba
                 start_idx = batch_idx * batchsize
                 end_idx = min(start_idx + batchsize, num_samples)
                 data = jax.tree_util.tree_map(lambda x: x[start_idx:end_idx], valid_data)
-                data = add_composition_with_cfg_drop(key, data, cfg_drop_prob)
+                key, subkey = jax.random.split(key)
+                data = add_composition_with_cfg_drop(subkey, data, cfg_drop_prob)
                 data = jax.tree_util.tree_map(lambda x: x.reshape(shape_prefix + x.shape[1:]), data)
 
                 keys, subkeys = p_split(keys)
