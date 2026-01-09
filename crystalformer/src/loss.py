@@ -131,7 +131,8 @@ if __name__=='__main__':
  
     loss_fn, _ = make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer)
 
-    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, W)
+    M = jax.vmap(lambda g, w: mult_table[g-1, w], in_axes=(0, 0))(G, W) # (batchsize, n_max)
+    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, M)
     print("composition:", composition.shape)
     
     value = jax.jit(loss_fn, static_argnums=8)(params, key, composition[:1], G[:1], L[:1], XYZ[:1], A[:1], W[:1], True)
