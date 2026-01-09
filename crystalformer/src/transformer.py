@@ -58,21 +58,9 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         # compute composition embeddings in two ways: conditional and unconditional
         c_embeddings_uncond = hk. get_parameter('c_embedding_uncond', [embed_size], init=initializer)
         is_comp_provided = (jnp.sum(composition) > 0)
-        
-        # using weighted average for composition embeddings
-        total_atoms = jnp.sum(composition)
-        scale = jnp.where(total_atoms > 0, 1.0 / total_atoms, 1.0)
-        c_embeddings_cond = (a_embedding_table * composition[:, None]).sum(axis=0) * scale
+        c_embeddings_cond = (a_embedding_table * composition[:, None]).sum(axis=0)
 
         c_embeddings = jnp.where(is_comp_provided, c_embeddings_cond, c_embeddings_uncond)
-
-        # add MLP and LayerNorm for c_embeddings
-        c_embeddings = hk.Sequential([
-            hk.Linear(embed_size, w_init=initializer),
-            jax.nn.gelu,
-            hk.Linear(embed_size, w_init=initializer),
-            hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)
-        ])(c_embeddings)
 
         g_logit = hk.Sequential([hk.Linear(h0_size, w_init=initializer),
                                   jax.nn.gelu,
