@@ -33,7 +33,7 @@ def scatter(x: jnp.ndarray, retain_axis=False) -> jnp.ndarray:
 def add_composition_with_cfg_drop(key, data, cfg_drop_prob):
     # compute composition vector and apply classifer-free guidance training
     G, A, W = data[0], data[3], data[4]
-    M = mult_table[G-1, W]  # (n_max,) multplicities
+    M = jax.vmap(lambda g, w: mult_table[g-1, w], in_axes=(0, 0))(G, W) # (batchsize, n_max)
     composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, M)
     # drop composition with probability cfg_drop_prob, set to zero vector
     drop_mask = jax.random.uniform(key, (composition.shape[0],)) < cfg_drop_prob
