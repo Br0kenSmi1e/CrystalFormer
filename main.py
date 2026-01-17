@@ -76,6 +76,7 @@ group.add_argument('--num_io_process', type=int, default=40, help='number of pro
 group.add_argument('--save_path', type=str, default=None, help='path to save the sampled structures')
 group.add_argument('--output_filename', type=str, default='output.csv', help='outfile to save sampled structures')
 group.add_argument('--verbose', type=int, default=0, help='verbose level')
+group.add_argument('--remove_radioactive', action='store_true', help='remove radioactive elements and noble gas, only valid when formula is None')
 
 
 args = parser.parse_args()
@@ -95,6 +96,17 @@ if args.optimizer != "none":
     valid_data = GLXYZAW_from_file(args.valid_path, args.atom_types, args.wyck_types, args.n_max, args.num_io_process)
 else:
     # test_data = GLXYZAW_from_file(args.test_path, args.atom_types, args.wyck_types, args.n_max, args.num_io_process)
+
+    if args.remove_radioactive:
+        from crystalformer.src.elements import radioactive_elements_dict, noble_gas_dict
+        # remove radioactive elements and noble gas
+        atom_mask = [1] + [1 if i not in radioactive_elements_dict.values() and i not in noble_gas_dict.values() else 0 for i in range(1, args.atom_types)]
+        atom_mask = jnp.array(atom_mask)
+        print('sampling structure formed by non-radioactive elements and non-noble gas')
+        
+    else:
+        atom_mask = jnp.ones((args.atom_types), dtype=int) # we will do nothing to a_logit in sampling
+    print(atom_mask)
     
     if args.wyckoff is not None:
         idx = [letter_to_number(w) for w in args.wyckoff]
@@ -193,7 +205,7 @@ else:
     else:
         print ('targeting spacegroup No.', args.spacegroup)
 
-    sample_crystal = make_sample_crystal(transformer, args.n_max, args.atom_types, args.wyck_types, args.Kx, args.Kl, w_mask, args.top_p, args.temperature, args.K, args.spacegroup)
+    sample_crystal = make_sample_crystal(transformer, args.n_max, args.atom_types, args.wyck_types, args.Kx, args.Kl, w_mask, args.top_p, args.temperature, args.K, args.spacegroup, atom_mask)
 
     if args.seed is not None:
         key = jax.random.PRNGKey(args.seed) # reset key for sampling if seed is provided
