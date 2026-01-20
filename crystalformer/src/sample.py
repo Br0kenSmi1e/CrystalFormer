@@ -60,7 +60,7 @@ def sample_x(key, h_x, Kx, top_p, temperature, batchsize):
     return key, x 
 
 
-def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_mask, top_p, temperature, K=0, g=None, atom_mask=None):
+def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_mask, top_p, temperature, K=0, g=None, atom_mask=None, spg_mask=None):
 
     if atom_mask is None:
         user_atom_mask = jnp.ones((atom_types,), dtype=bool)
@@ -156,6 +156,10 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
         
         #start from sampling the space group
         g_logit = inference(transformer, params, composition, G, W, A, X, Y, Z)[0] # (batchsize, 230) actually should be same along batchsize axis 
+
+        if spg_mask is not None:
+            # enhance the probability of masked space groups 1 for allow, 0 for not allow
+            g_logit = g_logit + jnp.where(spg_mask[None, :], 0.0, -1e10)
 
         #jax.debug.print("g_logit {g_logit}", g_logit=g_logit)
             
