@@ -72,8 +72,8 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
         f.write("epoch e_mean e_err e_max e_min attempt unique_space_groups unique_wyckoff_sequences unique_atom_sequences unique_WA_combinations kl g w a xyz l\n")
 
     pretrain_params = params
-    logp_fn = jax.jit(logp_fn, static_argnums=7)
-    loss_fn = jax.jit(loss_fn, static_argnums=7)
+    logp_fn = jax.jit(logp_fn, static_argnums=8)
+    loss_fn = jax.jit(loss_fn, static_argnums=8)
     
     global_ehull_min = jnp.inf
     for epoch in range(epoch_finished+1, epoch_finished+epochs+1):
@@ -172,6 +172,8 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
         G, L, XYZ, A, W = x
         L = norm_lattice(G, W, L)
         x = (G, L, XYZ, A, W)
+        # add composition information
+        x = (composition[None, :].repeat(x[0].shape[0], axis=0),) + x
         
         if epoch == epoch_finished+1:
             exp_buffer = (
@@ -204,6 +206,8 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
         )
 
         buffer = exp_buffer[:5]
+        # add composition information
+        buffer = (composition[None, :].repeat(buffer[0].shape[0], axis=0),) + buffer
 
         key, subkey1, subkey2 = jax.random.split(key, 3)
         logp_g, logp_w, logp_xyz, logp_a, logp_l = logp_fn(params, subkey1, *x, False)
