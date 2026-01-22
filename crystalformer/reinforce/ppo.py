@@ -96,7 +96,9 @@ def train(key, optimizer, opt_state, logp_fn, batch_reward_fn, ppo_loss_fn, samp
         
         while num_matched < batchsize and attempt < max_attempts:
             key, subkey = jax.random.split(key)
-            G, XYZ, A, W, M, L = sample_crystal(subkey, params, 10*batchsize, composition)
+
+            sample_bs = 10 * batchsize if is_comp_provided else batchsize
+            G, XYZ, A, W, M, L = sample_crystal(subkey, params, sample_bs, composition)
 
             if is_comp_provided:
                 actual_compositions = jax.vmap(find_composition_vector)(A, M)

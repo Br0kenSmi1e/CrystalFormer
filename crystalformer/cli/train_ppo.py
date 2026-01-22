@@ -61,7 +61,7 @@ def main():
     group.add_argument('--temperature', type=float, default=1.0, help='temperature used for sampling')
 
     group = parser.add_argument_group('reinforcement learning parameters')
-    group.add_argument('--reward', type=str, default='ehull', choices=['ehull', 'prop', 'dielectric'], help='reward function to use')
+    group.add_argument('--reward', type=str, default='ehull', choices=['ehull', 'prop', 'dielectric', 'density'], help='reward function to use')
     group.add_argument('--relaxation', action='store_true', help='whether to relax the structures')
     group.add_argument('--convex_path', type=str, default='/home/user_wanglei/private/datafile/crystalgpt/checkpoint/alex20/convex_hull_pbe.json.bz2')
     group.add_argument('--alpha', type=float, default=0.1, help='weight for entropy regulalization')
@@ -218,6 +218,10 @@ def main():
         assert len(model) == 2, "Two models are required for dielectric reward"
         from crystalformer.reinforce.reward import make_dielectric_reward_fn
         _, batch_reward_fn = make_dielectric_reward_fn(model, args.dummy_value)
+
+    elif args.reward == "density":
+        from crystalformer.reinforce.reward import make_density_reward_fn
+        _, batch_reward_fn = make_density_reward_fn(inverse=False)
 
     else:
         raise NotImplementedError

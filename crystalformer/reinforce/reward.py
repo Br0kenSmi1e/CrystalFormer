@@ -326,3 +326,39 @@ def make_dielectric_reward_fn(models, dummy_value=0):
         return output
 
     return reward_fn, batch_reward_fn
+
+
+def make_density_reward_fn(inverse=False):
+    """
+    Reward function for density reward.
+
+    Args:
+        inverse: if True, return negative density as reward
+
+    Returns:
+        reward_fn: single reward function
+        batch_reward_fn: batch reward function
+    """
+
+    from pymatgen.io.ase import AseAtomsAdaptor
+    ase_adaptor = AseAtomsAdaptor()
+
+    def reward_fn(x):
+        G, L, XYZ, A, W = x
+        atoms = get_atoms_from_GLXYZAW(G, L, XYZ, A, W)
+        struct = ase_adaptor.get_structure(atoms)
+
+        return struct.density if not inverse else -struct.density
+
+    def batch_reward_fn(x):
+        x = jax.tree_util.tree_map(lambda _x: jax.device_put(_x, jax.devices('cpu')[0]), x)
+        G, L, XYZ, A, W = x
+        G, L, XYZ, A, W = np.array(G), np.array(L), np.array(XYZ), np.array(A), np.array(W)
+        x = (G, L, XYZ, A, W)
+        output = map(reward_fn, zip(*x))
+        output = np.array(list(output))
+        output = jax.device_put(output, jax.devices('gpu')[0]).block_until_ready()
+
+        return output
+
+    return reward_fn, batch_reward_fn
