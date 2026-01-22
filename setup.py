@@ -23,7 +23,6 @@ setup(
             "classifier=crystalformer.cli.classifier:main",
             "cond_gen=crystalformer.cli.cond_gen:main",
             "dataset=crystalformer.cli.dataset:main",
-            "spg_sample=crystalformer.cli.spg_sample:main",
         ]
     }
 )
