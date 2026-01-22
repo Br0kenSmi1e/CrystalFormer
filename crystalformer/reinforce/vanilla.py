@@ -1,3 +1,10 @@
+deprecation = """
+REINFORCE module is deprecated and will be removed in future versions.
+Please use the PPO module for reinforcement learning tasks.
+"""
+raise DeprecationWarning(deprecation)
+
+
 import jax
 import jax.numpy as jnp
 import os
