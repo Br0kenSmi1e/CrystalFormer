@@ -102,48 +102,6 @@ def get_atoms_from_GLXYZAW(G, L, XYZ, A, W):
     return struct
 
 
-def make_force_reward_fn(calculator, weight=1.0):
-    """
-    Args:
-        calculator: ase calculator object
-        weight: weight for stress, total reward = log(forces + weight*stress)
-
-    Returns:
-        reward_fn: single reward function
-        batch_reward_fn: batch reward function
-    """
-    def reward_fn(x):
-        G, L, XYZ, A, W = x
-        try: 
-            atoms = get_atoms_from_GLXYZAW(G, L, XYZ, A, W)
-            atoms.calc = calculator
-            forces = atoms.get_forces()
-            stress = atoms.get_stress()
-        except: 
-            forces = np.ones((1, 3))*np.inf # avoid nan
-            stress = np.ones((6,))*np.inf
-        forces = np.linalg.norm(forces, axis=-1)
-        forces = np.clip(forces, 1e-2, 1e2)  # avoid too large or too small forces
-        forces = np.mean(forces)
-        stress = np.clip(np.abs(stress), 1e-2, 1e2)
-        stress = np.mean(stress)
-        
-        return np.log(forces + weight*stress)
-
-    def batch_reward_fn(x):
-        x = jax.tree_util.tree_map(lambda _x: jax.device_put(_x, jax.devices('cpu')[0]), x)
-        G, L, XYZ, A, W = x
-        G, L, XYZ, A, W = np.array(G), np.array(L), np.array(XYZ), np.array(A), np.array(W)
-        x = (G, L, XYZ, A, W)
-        output = map(reward_fn, zip(*x))
-        output = np.array(list(output))
-        output = jax.device_put(output, jax.devices('gpu')[0]).block_until_ready()
-
-        return output
-
-    return reward_fn, batch_reward_fn
-
-
 def make_ehull_reward_fn(calculator, ref_data, batch=50, n_jobs=-1, relaxation=False, clip_value=10.0):
     """
     Args:

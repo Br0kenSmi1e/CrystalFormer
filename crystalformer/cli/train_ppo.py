@@ -61,7 +61,7 @@ def main():
     group.add_argument('--temperature', type=float, default=1.0, help='temperature used for sampling')
 
     group = parser.add_argument_group('reinforcement learning parameters')
-    group.add_argument('--reward', type=str, default='force', choices=['force', 'ehull', 'prop', 'dielectric'], help='reward function to use')
+    group.add_argument('--reward', type=str, default='ehull', choices=['ehull', 'prop', 'dielectric'], help='reward function to use')
     group.add_argument('--relaxation', action='store_true', help='whether to relax the structures')
     group.add_argument('--convex_path', type=str, default='/home/user_wanglei/private/datafile/crystalgpt/checkpoint/alex20/convex_hull_pbe.json.bz2')
     group.add_argument('--alpha', type=float, default=0.1, help='weight for entropy regulalization')
@@ -70,7 +70,7 @@ def main():
     group.add_argument('--eps_clip', type=float, default=0.2, help='clip parameter for PPO')
     group.add_argument('--ehull_clip', type=float, default=20, help='clip parameter for ehull value')
     group.add_argument('--ppo_epochs', type=int, default=5, help='number of PPO epochs')
-    group.add_argument('--mlff_model', type=str, default='orb-v3-conservative-inf-mpa', choices=['mace', 'orb-v2', 'orb-v3-conservative-inf-mpa', 'orb-v3-direct-20-mpa', 'matgl'], help='the model to use for RL reward')
+    group.add_argument('--mlff_model', type=str, default='orb-v3-conservative-inf-mpa', choices=['orb-v2', 'orb-v3-conservative-inf-mpa', 'orb-v3-direct-20-mpa', 'matgl'], help='the model to use for RL reward')
     group.add_argument('--mlff_path', type=str, default='/home/user_wanglei/private/datafile/crystalgpt/checkpoint/alex20/orb-v3-conservative-inf-mpa-20250404.ckpt', help='path to the MLFF model')
 
     group = parser.add_argument_group('loss parameters')
@@ -167,14 +167,7 @@ def main():
 
     print("\n========== Load mlff ==========")
     print(f"Using {args.mlff_model} model at {args.mlff_path}")
-    if args.mlff_model == "mace":
-        from mace.calculators import mace_mp
-        calc = mace_mp(model=args.mlff_path,
-                        dispersion=False,
-                        default_dtype="float64",
-                        device='cuda')
-        
-    elif args.mlff_model in pretrained.ORB_PRETRAINED_MODELS:
+    if args.mlff_model in pretrained.ORB_PRETRAINED_MODELS:
         from orb_models.forcefield.calculator import ORBCalculator
         orbff = pretrained.ORB_PRETRAINED_MODELS[args.mlff_model](args.mlff_path, device='cuda')
         calc = ORBCalculator(orbff, device='cuda')
