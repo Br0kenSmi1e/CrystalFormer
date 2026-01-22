@@ -41,13 +41,14 @@ def make_ppo_loss_fn(logp_fn, eps_clip, beta=0.1, alpha=0.0, gamma=1.0, lamb_g=1
         ppo_loss = jnp.mean(jnp.minimum(surr1, surr2))
         ppo_loss += gamma * jnp.mean(logp_buffer)
 
-        return ppo_loss, (jnp.mean(kl_loss), -jnp.mean(logp_g), -jnp.mean(logp_w), -jnp.mean(logp_a), -jnp.mean(logp_xyz), -jnp.mean(-logp_l))
+        return ppo_loss, (jnp.mean(kl_loss), -jnp.mean(logp_g), -jnp.mean(logp_w), -jnp.mean(logp_a), -jnp.mean(logp_xyz), -jnp.mean(logp_l))
     
     return ppo_loss_fn
 
 
-def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss_fn, sample_crystal, composition, params, epoch_finished, epochs, ppo_epochs, batchsize, path):
+def train(key, optimizer, opt_state, logp_fn, batch_reward_fn, ppo_loss_fn, sample_crystal, composition, params, epoch_finished, epochs, ppo_epochs, batchsize, path):
 
+    is_comp_provided = jnp.sum(composition) > 0
     num_devices = jax.local_device_count()
     batch_per_device = batchsize // num_devices
     shape_prefix = (num_devices, batch_per_device)
@@ -55,6 +56,7 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
     print("batchsize: ", batchsize)
     print("batch_per_device: ", batch_per_device)
     print("shape_prefix: ", shape_prefix)
+    print("is_comp_provided: ", is_comp_provided)
 
     @partial(jax.pmap, axis_name="p", in_axes=(None, None, None, None, 0, 0, 0, 0), out_axes=(None, None, 0),)
     def step(params, key, opt_state, buffer, x, old_logp, pretrain_logp, advantages):
@@ -69,11 +71,13 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
     log_filename = os.path.join(path, "data.txt")
     f = open(log_filename, "w" if epoch_finished == 0 else "a", buffering=1, newline="\n")
     if os.path.getsize(log_filename) == 0:
-        f.write("epoch e_mean e_err e_max e_min attempt unique_space_groups unique_wyckoff_sequences unique_atom_sequences unique_WA_combinations kl g w a xyz l\n")
+        if is_comp_provided:
+            f.write("epoch e_mean e_err e_max e_min attempt unique_space_groups unique_wyckoff_sequences unique_atom_sequences unique_WA_combinations kl g w a xyz l\n")
+        else:
+            f.write("epoch f_mean f_err f_max\n")
 
     pretrain_params = params
     logp_fn = jax.jit(logp_fn, static_argnums=8)
-    loss_fn = jax.jit(loss_fn, static_argnums=8)
     
     global_ehull_min = jnp.inf
     for epoch in range(epoch_finished+1, epoch_finished+epochs+1):
@@ -94,8 +98,11 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
             key, subkey = jax.random.split(key)
             G, XYZ, A, W, M, L = sample_crystal(subkey, params, 10*batchsize, composition)
 
-            actual_compositions = jax.vmap(find_composition_vector)(A, M)
-            formula_match = jnp.all(actual_compositions == composition, axis=1)
+            if is_comp_provided:
+                actual_compositions = jax.vmap(find_composition_vector)(A, M)
+                formula_match = jnp.all(actual_compositions == composition, axis=1)
+            else:
+                formula_match = jnp.ones(G.shape[0], dtype=bool)
             
             # Get number of matched samples
             num_new_matched = int(jnp.sum(formula_match))
@@ -147,25 +154,34 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
 
         print (f'sampling done, move on to ppo') 
         
-        # Compute unique number of space groups 
-        unique_space_groups = jnp.unique(G, return_counts=False).shape[0]
-        # Number of unique wyckoff sequences for those matched formula
-        unique_wyckoff_sequences = jnp.unique(W, axis=0, return_counts=False).shape[0]
-        unique_atom_sequences = jnp.unique(A, axis=0, return_counts=False).shape[0]
-        # Number of unique (W, A) combinations
-        WA_combined = jnp.concatenate([W, A], axis=1)
-        unique_WA_combinations = jnp.unique(WA_combined, axis=0, return_counts=False).shape[0]
+        if is_comp_provided:
+            # Compute unique number of space groups 
+            unique_space_groups = jnp.unique(G, return_counts=False).shape[0]
+            # Number of unique wyckoff sequences for those matched formula
+            unique_wyckoff_sequences = jnp.unique(W, axis=0, return_counts=False).shape[0]
+            unique_atom_sequences = jnp.unique(A, axis=0, return_counts=False).shape[0]
+            # Number of unique (W, A) combinations
+            WA_combined = jnp.concatenate([W, A], axis=1)
+            unique_WA_combinations = jnp.unique(WA_combined, axis=0, return_counts=False).shape[0]
 
         x = (G, L, XYZ, A, W)
-        ehull = batch_reward_fn(x, path, epoch)
 
-        ehull_min = jnp.min(ehull)
-        ehull_max = jnp.max(ehull)
-        ehull_mean = jnp.mean(ehull)
-        ehull_err = jnp.std(ehull)/jnp.sqrt(batchsize)
+        if is_comp_provided:
+            # only using this type of reward when composition is provided
+            ehull = batch_reward_fn(x, path, epoch)
 
-        global_ehull_min = jnp.minimum(global_ehull_min, ehull_min)
-        rewards = global_ehull_min - ehull
+            ehull_min = jnp.min(ehull)
+            ehull_max = jnp.max(ehull)
+            ehull_mean = jnp.mean(ehull)
+            ehull_err = jnp.std(ehull)/jnp.sqrt(batchsize)
+
+            global_ehull_min = jnp.minimum(global_ehull_min, ehull_min)
+            rewards = global_ehull_min - ehull
+        else:
+            rewards = - batch_reward_fn(x)
+            f_mean = jnp.mean(rewards)
+            f_err = jnp.std(rewards) / jnp.sqrt(batchsize)
+
         baseline = rewards.mean() if epoch == epoch_finished+1 else 0.95 * baseline + 0.05 * rewards.mean()
         advantages = rewards - baseline
 
@@ -226,8 +242,11 @@ def train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss
             params, opt_state, value = step(params, subkey, opt_state, buffer, x, old_logp, pretrain_logp, advantages)
             ppo_loss, (kl_loss, entropy_g, entropy_w, entropy_a, entropy_xyz, entropy_l) = value
         
-        f.write( ("%6d" + 4*"  %.6f" + 5*"  %3d" + 6*"  %.6f"+ "\n") % (epoch, ehull_mean, ehull_err, ehull_max, ehull_min, attempt, unique_space_groups, unique_wyckoff_sequences, unique_atom_sequences, unique_WA_combinations, 
-            kl_loss[0], entropy_g[0], entropy_w[0], entropy_a[0], entropy_xyz[0], entropy_l[0]))
+        if is_comp_provided:
+            f.write( ("%6d" + 4*"  %.6f" + 5*"  %3d" + 6*"  %.6f"+ "\n") % (epoch, ehull_mean, ehull_err, ehull_max, ehull_min, attempt, unique_space_groups, unique_wyckoff_sequences, unique_atom_sequences, unique_WA_combinations, 
+                kl_loss[0], entropy_g[0], entropy_w[0], entropy_a[0], entropy_xyz[0], entropy_l[0]))
+        else:
+            f.write( ("%6d" + 3*"  %.6f" +"\n") % (epoch, f_mean, f_err, jnp.max(rewards)) )
 
         if epoch % 10 == 0:
             ckpt = {"params": params,

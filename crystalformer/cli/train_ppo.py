@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 from jax.flatten_util import ravel_pytree
 from functools import partial
@@ -106,7 +107,10 @@ def main():
 
     print ("# of transformer params", ravel_pytree(params)[0].size) 
 
-    composition = formula_string_to_composition_vector(args.formula)
+    if args.formula is not None:
+        composition = formula_string_to_composition_vector(args.formula)
+    else:
+        composition = jnp.zeros((args.atom_types,), dtype=int)
     print ('composition vector of', args.formula)
     print (composition)
 
@@ -235,7 +239,7 @@ def main():
                                    )
 
     # PPO training
-    params, opt_state = train(key, optimizer, opt_state, loss_fn, logp_fn, batch_reward_fn, ppo_loss_fn, sample_crystal,
+    params, opt_state = train(key, optimizer, opt_state, logp_fn, batch_reward_fn, ppo_loss_fn, sample_crystal,
                                composition, params, epoch_finished, args.epochs, args.ppo_epochs, args.batchsize, output_path
                                )
 
