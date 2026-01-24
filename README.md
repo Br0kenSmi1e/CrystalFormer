@@ -140,6 +140,12 @@ We release the weights of the model trained on the [Alex20s](https://huggingface
 
 ## Crystal Structure Prediction
 
+<div align="center">
+  <img align="middle" src="imgs/csp.png" width="500" alt="logo"/>
+  <h2>Thinking fast and slow for crystal structure prediction</h2>
+</div>
+
+
 ### Sample
 
 ```bash
