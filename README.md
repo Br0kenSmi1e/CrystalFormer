@@ -56,8 +56,7 @@ _CrystalFormer_ is an autoregressive transformer for the probability distributio
 - **De novo generation**: $P(C|\varnothing) = P(g) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$
 - **Formula-conditioned prediction**: $P(C|f) = P(g|f) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$
 
-where the crystal structure $C$ is represented by the sequence $g-\{W_{i}-A_{i}-X_{i}\}_{n
-}-L$:
+where the crystal structure $C$ is represented by the sequence $g-(W_{i}-A_{i}-X_{i})_{n}-L$:
 - $f$: chemical formula, e.g. `Cu12Sb4S13`
 - $g$: space group number 1-230
 - $W$: Wyckoff letter ('a', 'b', ...,'A')
@@ -86,11 +85,13 @@ Major milestones are summarized below.
 
 **Notebooks**: The quickest way to get started with _CrystalFormer_ is our notebooks in the Google Colab platform:
 
-- CrystalFormer Quickstart [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IMQV6OQgIGORE8FmSTmZuC5KgQwGCnDx?usp=sharing) [![Open In Bohrium](https://cdn.dp.tech/bohrium/web/static/images/open-in-bohrium.svg)](https://nb.bohrium.dp.tech/detail/68177247598): GUI notebook demonstrating the conditional generation of crystalline materials with _CrystalFormer_
-- CrystalFormer Application [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1QdkELaQXAHR1zEu2fcdfgabuoP61_wbU?usp=sharing): Generating stable crystals with a given structure prototype. This workflow can be applied to tasks that are dominated by element substitution
+- ColabCSP [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1I7b5exbB2oBjexFIEaeDQexmYRDgLHVk?authuser=0#scrollTo=kfu6Ez9e6Sp7): Running _CrystalFormer-CSP_ Seamlessly on Google Colab
 - CrystalFormer-RL [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1ojSqMQzdnlWZRPOQP20nTvvIh67HXdwp#scrollTo=lKOZgUczOAxE) [![Open In Bohrium](https://cdn.dp.tech/bohrium/web/static/images/open-in-bohrium.svg)](https://bohrium.dp.tech/notebooks/52828216135): Reinforcement fine-tuning for materials design
 
-- ColabCSP [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1I7b5exbB2oBjexFIEaeDQexmYRDgLHVk?authuser=0#scrollTo=kfu6Ez9e6Sp7): Running _CrystalFormer-CSP_ Seamlessly on Google Colab
+
+**Previous notebooks** (only for reference but not actively maintained):
+- CrystalFormer Quickstart [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1IMQV6OQgIGORE8FmSTmZuC5KgQwGCnDx?usp=sharing) [![Open In Bohrium](https://cdn.dp.tech/bohrium/web/static/images/open-in-bohrium.svg)](https://nb.bohrium.dp.tech/detail/68177247598): GUI notebook demonstrating the conditional generation of crystalline materials with _CrystalFormer_
+- CrystalFormer Application [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1QdkELaQXAHR1zEu2fcdfgabuoP61_wbU?usp=sharing): Generating stable crystals with a given structure prototype. This workflow can be applied to tasks that are dominated by element substitution
 
 ## Installation
 
