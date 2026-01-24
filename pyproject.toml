@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crystalformer"
+version = "0.6"
+description = "CrystalFormer is a transformer-based autoregressive model specifically designed for space group-controlled generation of crystalline materials."
+authors = [
+    { name = "iopcompphys", email = "wanglei@iphy.ac.cn" }
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+keywords = ["de novo generation", "crystal structure prediction", "transformer", "reinforcement learning"]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux"
+]
+dependencies = [
+    "dm-haiku==0.0.15",
+    "optax==0.2.6",
+    "pyxtal==1.1.1"
+]
+
+[project.urls]
+Homepage = "https://github.com/deepmodeling/CrystalFormer"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+crystalformer = ["data/*.csv"]
+
+[project.scripts]
+train_ppo = "crystalformer.cli.train_ppo:main"
+train_dpo = "crystalformer.cli.train_dpo:main"
+classifier = "crystalformer.cli.classifier:main"
+cond_gen = "crystalformer.cli.cond_gen:main"
+dataset = "crystalformer.cli.dataset:main"

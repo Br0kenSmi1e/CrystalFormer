@@ -3,7 +3,9 @@
   <h2>CrystalFormer: Unified Crystal Structure Generation and Prediction</h2>
 </div>
 
-[![arXiv](https://img.shields.io/badge/arXiv-2403.15734-b31b1b.svg)](https://arxiv.org/abs/2403.15734) [![arXiv](https://img.shields.io/badge/arXiv-2504.02367-b31b1b.svg)](https://arxiv.org/abs/2504.02367) [![arXiv](https://img.shields.io/badge/arXiv-2512.18251-b31b1b.svg)](https://arxiv.org/abs/2512.18251)
+[![arXiv](https://img.shields.io/badge/arXiv-2403.15734-b31b1b.svg)](https://arxiv.org/abs/2403.15734)
+[![arXiv](https://img.shields.io/badge/arXiv-2504.02367-b31b1b.svg)](https://arxiv.org/abs/2504.02367)
+[![arXiv](https://img.shields.io/badge/arXiv-2512.18251-b31b1b.svg)](https://arxiv.org/abs/2512.18251)
 
 <div align="center">
   <img align="middle" src="imgs/output.gif" width="400">
@@ -32,8 +34,7 @@ No architectural change is required — _CrystalFormer_ seamlessly switches beha
 - [Installation](#installation)
   - [CPU installation](#cpu-installation)
   - [CUDA (GPU) installation](#cuda-gpu-installation)
-  - [install required packages](#install-required-packages)
-  - [command line tools](#command-line-tools)
+  - [Install required packages and command line tools](#install-required-packages-and-command-line-tools)
 - [Available Weights](#available-weights)
 - [Crystal Structure Prediction](#crystal-structure-prediction)
   - [Sample](#sample)
@@ -122,18 +123,16 @@ pip install --upgrade pip
 pip install -U "jax[cuda12]"
 ```
 
-### install required packages
+### Install required packages and command line tools
 
-```bash
-pip install -r requirements.txt
-```
-
-### command line tools
-To use the command line tools, you need to install the `crystalformer` package. You can use the following command to install the package:
+After installing `jax` and `jaxlib`, you need to install the `crystalformer` package:
 
 ```bash
 pip install .
 ```
+
+While installing, the command line tools in the [cli](crystalformer/cli/) directory will be automatically installed.
+
 
 ## Available Weights
 
