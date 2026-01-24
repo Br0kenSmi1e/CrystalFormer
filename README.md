@@ -47,6 +47,7 @@ No architectural change is required — _CrystalFormer_ seamlessly switches beha
   - [Evaluate](#evaluate)
 - [Advanced Usage](#advanced-usage)
   - [Reinforcement Fine-tuning](#reinforcement-fine-tuning)
+  - [Writing custom reward functions](#writing-custom-reward-functions)
   - [Pretrain](#pretrain)
 - [How to cite](#how-to-cite)
 
@@ -308,7 +309,56 @@ where
 - `mlff_model`: the machine learning force field model to predict the total energy. We support [`orb`](https://github.com/orbital-materials/orb-models) model for the $E_{hull}$ reward
 - `mlff_path`: the path to load the checkpoint of the machine learning force field model
 
-### pretrain
+Currently, CSP reinforcement fine-tuning only supports the `ehull` reward. For DNG reinforcement fine-tuning, simply omit the `--formula` argument.
+
+### Writing custom reward functions
+
+Custom reward functions are implemented as Python factory functions that return a pair (`reward_fn`, `batch_reward_fn`). Follow the patterns in [crystalformer/reinforce/reward.py](crystalformer/reinforce/reward.py) to implement your own reward functions.
+
+Guidelines
+
+- Signature: `reward_fn(x)` accepts a single sample tuple (G, L, XYZ, A, W) and returns a scalar reward (float or numpy scalar).
+- Batch API: `batch_reward_fn(x)` accepts a batched x=(G,L,XYZ,A,W) (JAX arrays). It should convert inputs to CPU numpy arrays, compute per-sample rewards (e.g., by calling reward_fn or a vectorized routine), and return a jax.numpy array placed on the GPU (see examples below for device transfers using jax.device_put).
+- Structure conversion: use `get_atoms_from_GLXYZAW(G, L, XYZ, A, W)` from crystalformer.reinforce.reward to convert the representation to ASE Atoms or a pymatgen Structure before calling property predictors or MLFFs.
+- Robustness: catch exceptions and return a sensible dummy or clipped reward for failed predictions to avoid crashing training.
+- Performance: for heavy operations (relaxations, MLFF evaluations), prefer parallel/batched implementations where possible.
+
+Minimal example
+
+```python
+from crystalformer.reinforce import reward as reward_mod
+from pymatgen.io.ase import AseAtomsAdaptor
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+def make_custom_reward_fn(model, dummy=0.0):
+    ase_adaptor = AseAtomsAdaptor()
+
+    def reward_fn(x):
+        G, L, XYZ, A, W = x
+        try:
+            atoms = reward_mod.get_atoms_from_GLXYZAW(G, L, XYZ, A, W)
+            struct = ase_adaptor.get_structure(atoms)
+            val = model(struct)  # compute property from structure
+            return float(val)
+        except Exception:
+            return float(dummy)
+
+    def batch_reward_fn(x):
+        # move data to CPU numpy for Python-side processing
+        x = jax.tree_util.tree_map(lambda _x: jax.device_put(_x, jax.devices('cpu')[0]), x)
+        # iterate over samples (or use parallel map) and collect rewards
+        output = [reward_fn(sample) for sample in zip(*x)]
+        # return jnp.array on GPU
+        return jax.device_put(jnp.array(output), jax.devices('gpu')[0]).block_until_ready()
+
+    return reward_fn, batch_reward_fn
+```
+
+See the concrete implementations in [crystalformer/reinforce/reward.py](crystalformer/reinforce/reward.py) for more complete patterns (device transfers, relaxation, parallelization and clipping of rewards).
+
+### Pretrain
 
 ```bash
 python ./main.py --folder ./data/ --cfg 0.5 --train_path YOUR_PATH/alex20s/train.csv --valid_path YOUR_PATH/alx20s/val.csv 
