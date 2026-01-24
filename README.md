@@ -54,8 +54,10 @@ No architectural change is required — _CrystalFormer_ seamlessly switches beha
 _CrystalFormer_ is an autoregressive transformer for the probability distribution of crystal structures:
 
 - **De novo generation**: $P(C|\varnothing) = P(g) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$
-- **Formula-conditioned prediction**: $P(C|f) = P(g|f) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$, where
+- **Formula-conditioned prediction**: $P(C|f) = P(g|f) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$
 
+where the crystal structure $C$ is represented by the sequence $g-\{W_{i}-A_{i}-X_{i}\}_{n
+}-L$:
 - $f$: chemical formula, e.g. `Cu12Sb4S13`
 - $g$: space group number 1-230
 - $W$: Wyckoff letter ('a', 'b', ...,'A')
