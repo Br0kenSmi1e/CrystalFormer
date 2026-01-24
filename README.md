@@ -41,6 +41,7 @@ No architectural change is required — _CrystalFormer_ seamlessly switches beha
   - [Relax](#relax-generated-structures-with-mlff)
   - [Energy Above Hull (Ehull)](#energy-above-hull-ehull)
   - [End-to-End Pipeline](#end-to-end-pipeline)
+  - [Model Context Protocol (MCP) Server](#model-context-protocol-mcp-server)
 - [De Novo Generation](#de-novo-generation)
   - [Sample](#sample-1)
   - [Evaluate](#evaluate)
@@ -214,6 +215,10 @@ In case you are curious about the parameters, run:
 ./postprocess.sh -h 
 ``` 
 
+### Model Context Protocol (MCP) Server
+
+_CrystalFormer_ can be easily integrated with AI assistants via the Model Context Protocol (MCP). Please refer to the [MCP README](./mcp/README.md) for detailed instructions on setting up and using the MCP server for crystal structure prediction.
+ 
 ## De Novo Generation
 
 ### Sample
