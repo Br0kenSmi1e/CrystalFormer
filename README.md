@@ -284,7 +284,7 @@ More details about the post-processing can be seen in the [scripts](./scripts/RE
 ### Reinforcement Fine-tuning
 
 > [!IMPORTANT]
-> Before running the reinforcement fine-tuning, please make sure you have installed the corresponding machine learning force field model or property prediction model. The `mlff_model` and `mlff_path` arguments in the command line should be set according to the model you are using. Now we only support the[`orb`](https://github.com/orbital-materials/orb-models) for the $E_{hull}$ reward. [`BatchRelaxer`](https://github.com/zdcao121/BatchRelaxer) is also needed for batch structure relaxation during the fine-tuning.
+> Before running the reinforcement fine-tuning, please make sure you have installed the corresponding machine learning force field model or property prediction model. The `mlff_model` and `mlff_path` arguments in the command line should be set according to the model you are using. Now we only support the [`orb`](https://github.com/orbital-materials/orb-models) for the $E_{hull}$ reward. [`BatchRelaxer`](https://github.com/zdcao121/BatchRelaxer) is also needed for batch structure relaxation during the fine-tuning.
 
 
 ```bash
@@ -364,9 +364,9 @@ See the concrete implementations in [crystalformer/reinforce/reward.py](crystalf
 ### Pretrain
 
 ```bash
-python ./main.py --folder ./data/ --cfg 0.5 --train_path YOUR_PATH/alex20s/train.csv --valid_path YOUR_PATH/alx20s/val.csv 
+python ./main.py --folder ./data/ --cfg_drop_prob 0.5 --train_path YOUR_PATH/alex20s/train.csv --valid_path YOUR_PATH/alex20s/val.csv
 ```
-where 
+where
 - `folder`: the folder to save the model and logs
 - `cfg_drop_prob`: classifier-free guidance drop probability for formula conditioning. A value of `1` disables formula conditioning (DNG), while a value of `0` always enables formula conditioning (CSP)
 - `train_path`: the path to the training dataset
