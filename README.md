@@ -315,6 +315,9 @@ Currently, CSP reinforcement fine-tuning only supports the `ehull` reward. For D
 
 Custom reward functions are implemented as Python factory functions that return a pair (`reward_fn`, `batch_reward_fn`). Follow the patterns in [crystalformer/reinforce/reward.py](crystalformer/reinforce/reward.py) to implement your own reward functions.
 
+> [!CAUTION]
+> **Reward direction**: The reinforcement fine-tuning uses gradient ascent combined with reward inversion, which effectively **minimizes** the reward. If you want to minimize a property (e.g., energy, formation energy), return the positive value directly. If you want to **maximize** a property, return its **negative** value as the reward. For example, to minimize $E_{hull}$, the reward function simply returns `ehull`.
+
 Guidelines
 
 - Signature: `reward_fn(x)` accepts a single sample tuple (G, L, XYZ, A, W) and returns a scalar reward (float or numpy scalar).
