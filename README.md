@@ -320,8 +320,8 @@ Custom reward functions are implemented as Python factory functions that return 
 
 Guidelines
 
-- Signature: `reward_fn(x)` accepts a single sample tuple (G, L, XYZ, A, W) and returns a scalar reward (float or numpy scalar).
-- Batch API: `batch_reward_fn(x)` accepts a batched x=(G,L,XYZ,A,W) (JAX arrays). It should convert inputs to CPU numpy arrays, compute per-sample rewards (e.g., by calling reward_fn or a vectorized routine), and return a jax.numpy array placed on the GPU (see examples below for device transfers using jax.device_put).
+- Signature: `reward_fn(x)` accepts a single sample tuple `(G, L, XYZ, A, W)` and returns a scalar reward (float or numpy scalar).
+- Batch API: `batch_reward_fn(x)` accepts a batched `x=(G,L,XYZ,A,W)` (JAX arrays). It should convert inputs to CPU numpy arrays, compute per-sample rewards (e.g., by calling reward_fn or a vectorized routine), and return a jax.numpy array placed on the GPU (see examples below for device transfers using jax.device_put).
 - Structure conversion: use `get_atoms_from_GLXYZAW(G, L, XYZ, A, W)` from crystalformer.reinforce.reward to convert the representation to ASE Atoms or a pymatgen Structure before calling property predictors or MLFFs.
 - Robustness: catch exceptions and return a sensible dummy or clipped reward for failed predictions to avoid crashing training.
 - Performance: for heavy operations (relaxations, MLFF evaluations), prefer parallel/batched implementations where possible.
