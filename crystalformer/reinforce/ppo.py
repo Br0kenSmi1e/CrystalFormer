@@ -46,6 +46,30 @@ def make_ppo_loss_fn(logp_fn, eps_clip, beta=0.1, alpha=0.0, gamma=1.0, lamb_g=1
     return ppo_loss_fn
 
 
+def update_replay_buffer(exp_buffer, G, L, XYZ, A, W, rewards, batchsize):
+    """Update experience replay buffer with top-k samples based on rewards."""
+    # Concatenate current batch with buffer for each component
+    G_combined = jnp.concatenate([exp_buffer[0], G], axis=0)
+    L_combined = jnp.concatenate([exp_buffer[1], L], axis=0)
+    XYZ_combined = jnp.concatenate([exp_buffer[2], XYZ], axis=0)
+    A_combined = jnp.concatenate([exp_buffer[3], A], axis=0)
+    W_combined = jnp.concatenate([exp_buffer[4], W], axis=0)
+    rewards_combined = jnp.concatenate([exp_buffer[5], rewards], axis=0)
+
+    # Keep top-k samples (descending sort by reward)
+    buffersize = batchsize // 10
+    topk_idx = jnp.argsort(-rewards_combined)[:buffersize]
+
+    return (
+        G_combined[topk_idx],
+        L_combined[topk_idx],
+        XYZ_combined[topk_idx],
+        A_combined[topk_idx],
+        W_combined[topk_idx],
+        rewards_combined[topk_idx]
+    )
+
+
 def train(key, optimizer, opt_state, logp_fn, batch_reward_fn, ppo_loss_fn, sample_crystal, composition, params, epoch_finished, epochs, ppo_epochs, batchsize, path):
 
     is_comp_provided = jnp.sum(composition) > 0
@@ -203,26 +227,7 @@ def train(key, optimizer, opt_state, logp_fn, batch_reward_fn, ppo_loss_fn, samp
                 jnp.empty((0,))            # rewards
             )
 
-        # Concatenate current batch with buffer for each component
-        G_combined     = jnp.concatenate([exp_buffer[0], G], axis=0)
-        L_combined     = jnp.concatenate([exp_buffer[1], L], axis=0)
-        XYZ_combined   = jnp.concatenate([exp_buffer[2], XYZ], axis=0)
-        A_combined     = jnp.concatenate([exp_buffer[3], A], axis=0)
-        W_combined     = jnp.concatenate([exp_buffer[4], W], axis=0)
-        rewards_combined = jnp.concatenate([exp_buffer[5], rewards], axis=0)
-
-        buffersize = batchsize//10
-        topk_idx = jnp.argsort(-rewards_combined)[:buffersize]  # descending sort
-
-        exp_buffer = (
-            G_combined[topk_idx],
-            L_combined[topk_idx],
-            XYZ_combined[topk_idx],
-            A_combined[topk_idx],
-            W_combined[topk_idx],
-            rewards_combined[topk_idx]
-        )
-
+        exp_buffer = update_replay_buffer(exp_buffer, G, L, XYZ, A, W, rewards, batchsize)
         buffer = exp_buffer[:5]
         # add composition information
         buffer = (composition[None, :].repeat(buffer[0].shape[0], axis=0),) + buffer
