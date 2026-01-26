@@ -23,7 +23,7 @@ The model can:
 - **De novo generation** $p(C|\varnothing)$: Generate plausible crystal structures from scratch, without any formula constraint.
 - **Crystal structure prediction** $p(C|f)$: Generate crystal structures conditioned on a given chemical formula $f$.
 
-No architectural change is required — _CrystalFormer_ seamlessly switches behavior depending on whether a formula is supplied.
+We provide a pretrained checkpoint to support both functionalities. No architectural change is required — _CrystalFormer_ seamlessly switches behavior depending on whether a formula is supplied. Furthermore, the performance of both functionalities can be boosted via reinforcement fine-tuning.
 
 ## Contents
 
@@ -60,17 +60,17 @@ _CrystalFormer_ is an autoregressive transformer for the probability distributio
 - **Formula-conditioned prediction**: $P(C|f) = P(g|f) P(W_1|...) P(A_1|...) P(X_1|...) ... P(L|...)$
 
 where the crystal structure $C$ is represented by the sequence $g-(W_{i}-A_{i}-X_{i})_{n}-L$:
-- $f$: chemical formula, e.g. `Cu12Sb4S13`
+- $f$: chemical formula, e.g. Cu<sub>12</sub>Sb<sub>4</sub>S<sub>13</sub>
 - $g$: space group number 1-230
 - $W$: Wyckoff letter ('a', 'b', ...,'A')
 - $A$: atom type ('H', 'He', ..., 'Og') in the chemical formula
-- $X$: factional coordinates
+- $X$: fractional coordinates
 - $L$: lattice vector [a, b, c, alpha, beta, gamma]
 - $P(W_i| ...)$ and $P(A_i| ...)$ are categorical distributions.
 - $P(X_i| ...)$ is the mixture of von Mises distribution.
 - $P(L| ...)$ is the mixture of Gaussian distribution.
 
-We only consider symmetry inequivalent atoms in the crystal representation. The remaining atoms are restored based on the information of space group and Wyckoff letters. There is a natural alphabetical ordering for the Wyckoff letters, starting with 'a' for a position with the site-symmetry group of maximal order and ending with the highest letter for the general position. The sampling procedure starts from higher symmetry sites (with smaller multiplicities) and then goes on to lower symmetry ones (with larger multiplicities). Only for the cases where the Wyckoff letter can not fully determine the structure, one needs to further consider factional coordinates in the loss or sampling. 
+We only consider symmetry inequivalent atoms in the crystal representation. The remaining atoms are restored based on the information of space group and Wyckoff letters. There is a natural alphabetical ordering for the Wyckoff letters, starting with 'a' for a position with the site-symmetry group of maximal order and ending with the highest letter for the general position. The sampling procedure starts from higher symmetry sites (with smaller multiplicities) and then goes on to lower symmetry ones (with larger multiplicities). Only for the cases where the Wyckoff letter cannot fully determine the structure, one needs to further consider fractional coordinates in the loss or sampling. 
 
 ## Status
 
@@ -133,12 +133,12 @@ After installing `jax` and `jaxlib`, you need to install the `crystalformer` pac
 pip install .
 ```
 
-While installing, the command line tools in the [cli](crystalformer/cli/) directory will be automatically installed.
+During installation, the command line tools in the [cli](crystalformer/cli/) directory will be automatically installed.
 
 
 ## Available Weights
 
-We release the weights of the model trained on the [Alex20s](https://huggingface.co/datasets/zdcao/alex-20s) dataset. More details can be seen in the [model card](./MODEL_CARD.md).
+We release the weights of the model trained on the [Alex20s](https://huggingface.co/datasets/zdcao/alex-20s) dataset. More details are available in the [model card](./MODEL_CARD.md).
 
 ## Crystal Structure Prediction
 
@@ -185,7 +185,7 @@ python scripts/mlff_relax.py \
     --model_path path/to/orb-v3.ckpt \
     --relaxation
 ```
-This will produce relaxed structure in `relaxed_structures` with predicted energies.
+This will produce relaxed structures in `relaxed_structures` with predicted energies.
 
 ### Energy Above Hull (Ehull)
 
@@ -214,12 +214,12 @@ Run sampling → CIF conversion → relaxation → Ehull ranking:
 In case you are curious about the parameters, run:
 ```bash 
 ./postprocess.sh -h 
-``` 
+```
 
 ### Model Context Protocol (MCP) Server
 
 _CrystalFormer_ can be easily integrated with AI assistants via the Model Context Protocol (MCP). Please refer to the [MCP README](./mcp/README.md) for detailed instructions on setting up and using the MCP server for crystal structure prediction.
- 
+
 ## De Novo Generation
 
 ### Sample
@@ -237,7 +237,7 @@ python ./main.py --optimizer none --restore_path YOUR_MODEL_PATH --spacegroup 16
 
 The sampling results will be saved in the `output_LABEL.csv` file, where the `LABEL` is the space group number `g` specified in the command `--spacegroup`.
 
-### Evaluate
+### Evaluation
 
 Before evaluating the generated structures, you need to transform the generated `g, W, A, X, L` to the `cif` format. You can use the following command to transform the generated structures to the `cif` format and save as the `csv` file:
 
@@ -277,14 +277,14 @@ python ./scripts/compute_metrics_matbench.py --train_path TRAIN_PATH --test_path
 
 Note that the training, test, and generated datasets should contain the structures within the **same** space group `g` which is specified in the command `--label`.
 
-More details about the post-processing can be seen in the [scripts](./scripts/README.md) folder.
+More details about post-processing are available in the [scripts](./scripts/README.md) folder.
 
 ## Advanced usage
 
 ### Reinforcement Fine-tuning
 
 > [!IMPORTANT]
-> Before running the reinforcement fine-tuning, please make sure you have installed the corresponding machine learning force field model or property prediction model. The `mlff_model` and `mlff_path` arguments in the command line should be set according to the model you are using. Now we only support the [`orb`](https://github.com/orbital-materials/orb-models) for the $E_{hull}$ reward. [`BatchRelaxer`](https://github.com/zdcao121/BatchRelaxer) is also needed for batch structure relaxation during the fine-tuning.
+> Before running the reinforcement fine-tuning, please make sure you have installed the corresponding machine learning force field model or property prediction model. The `mlff_model` and `mlff_path` arguments in the command line should be set according to the model you are using. Currently, we only support the [`orb`](https://github.com/orbital-materials/orb-models) model for the $E_{hull}$ reward. [`BatchRelaxer`](https://github.com/zdcao121/BatchRelaxer) is also needed for batch structure relaxation during fine-tuning.
 
 
 ```bash
