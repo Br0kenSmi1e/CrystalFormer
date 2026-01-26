@@ -1,6 +1,6 @@
 <div align="center">
   <img align="middle" src="imgs/crystalformer.png" width="400" alt="logo"/>
-  <h2>CrystalFormer: Unified Crystal Structure Generation and Prediction</h2>
+  <h2> A Foundation Model for Crystal Structure Generation and Prediction</h2>
 </div>
 
 [![arXiv](https://img.shields.io/badge/arXiv-2403.15734-b31b1b.svg)](https://arxiv.org/abs/2403.15734)
@@ -14,7 +14,7 @@
 
 # Overview
 
-_CrystalFormer_ is a unified autoregressive transformer model for crystalline material generation that supports **both** de novo crystal generation (DNG) and crystal structure prediction (CSP)
+_CrystalFormer_ is a unified autoregressive transformer model for inorganic crystalline material generation that supports **both** de novo crystal generation (DNG) and crystal structure prediction (CSP)
 within a *single probabilistic framework*.
 It is specifically designed for space group-controlled generation of crystalline materials. The space group symmetry significantly simplifies the crystal space, which is crucial for data and compute efficient generative modeling of crystalline materials.
 
