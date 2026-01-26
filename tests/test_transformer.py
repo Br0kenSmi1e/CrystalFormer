@@ -26,8 +26,11 @@ def test_autoregressive():
     key = jax.random.PRNGKey(42)
     params, transformer = make_transformer(key, Nf, Kx, Kl, n_max, dim, 128, 4, 4, 8, 16,atom_types, wyck_types, dropout_rate) 
 
+    # Create a dummy composition (all zeros for unconditional)
+    composition = jnp.zeros(atom_types)
+
     def test_fn(X, M):
-        output = transformer(params, None, G[0], X, A[0], W[0], M, False)
+        g_logit, output = transformer(params, None, composition, G[0], X, A[0], W[0], M, False)
         print (output.shape)
         return output.sum(axis=-1)
 
