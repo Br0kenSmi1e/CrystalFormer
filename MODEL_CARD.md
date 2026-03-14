@@ -2,21 +2,21 @@
 
 We release two pretrained checkpoints, both trained on the [Alex-20s](https://huggingface.co/datasets/zdcao/alex-20s) dataset with the same model architecture but different `cfg_drop_prob` settings.
 
-## CrystalFormer (Multi-task)
+## Multitask
 
-A unified model for both de novo generation (DNG) and crystal structure prediction (CSP), trained with `cfg_drop_prob=0.5`. The model seamlessly switches between DNG and CSP depending on whether a chemical formula is provided.
+A unified model for both de novo generation (DNG) and crystal structure prediction (CSP), trained with  `0 < cfg_drop_prob < 1`. The model seamlessly switches between DNG and CSP depending on whether a chemical formula is provided.
 
-- **Weights**: [Google Drive](YOUR_LINK) | [Hugging Face](YOUR_LINK)
+- **Weights**: [Google Drive](https://drive.google.com/file/d/1qr-e0C2KrgPhnDOv4sn-FWI0r2pdQ0vk/view?usp=sharing) | [Hugging Face](https://huggingface.co/zdcao/CrystalFormer/resolve/main/alex20s/multi/epoch_044000.pkl)
 
-## CrystalFormer-CSP
+## CSP-Only
 
 A dedicated crystal structure prediction model, trained with `cfg_drop_prob=0` (formula conditioning is always enabled). This model is optimized for CSP tasks only.
 
-- **Weights**: [Google Drive](https://drive.google.com/file/d/1sudBG-3AEm008_BiDE0y_m8AvNlVXzri/view?usp=sharing) | [Hugging Face](YOUR_LINK)
+- **Weights**: [Google Drive](https://drive.google.com/file/d/1sudBG-3AEm008_BiDE0y_m8AvNlVXzri/view?usp=sharing) | [Hugging Face](https://huggingface.co/zdcao/CrystalFormer/resolve/main/alex20s/csp/epoch_046000.pkl)
 
-## Model Parameters
+## Model Architecture
 
-Both models share the same architecture:
+Both checkpoints share the same Transformer architecture:
 
 ```python
 params, transformer = make_transformer(
@@ -42,8 +42,10 @@ params, transformer = make_transformer(
 
 ## Training Dataset
 
-Alex-20s: contains ~1.7M general inorganic materials curated from the [Alexandria database](https://alexandria.icams.rub.de/), with $E_{hull} < 0.1$ eV/atom and no more than 20 Wyckoff sites in conventional cell. The dataset can be found in the [Hugging Face Datasets](https://huggingface.co/datasets/zdcao/alex-20s).
+**[Alex-20s](https://huggingface.co/datasets/zdcao/alex-20s)**: ~1.7M general inorganic materials curated from the [Alexandria database](https://alexandria.icams.rub.de/), filtered by:
+- Energy above hull: $E_{hull} < 0.1$ eV/atom
+- Structure complexity: no more than 20 Wyckoff sites in the conventional cell
 
 ## Speeds, Sizes, Times
-- Both models contain ~13.8 M parameters
-- It takes 1058 seconds to generate a batch size 29,000 crystal samples on a single A100 GPU, which translates to a generation speed of 37 milliseconds per sample.
+- Both models contain ~13.8M parameters
+- Generating 29,000 crystal samples on a single A100 GPU takes ~1,058 seconds (~37 ms per sample)
