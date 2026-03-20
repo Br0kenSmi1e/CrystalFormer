@@ -260,9 +260,9 @@ else:
             for g, l in zip(G, L):
                 print (g, l)
 
-        # repeat composition for batch
-        composition = composition[None, :].repeat(args.batchsize, axis=0)
-        logp_g, logp_w, logp_xyz, logp_a, logp_l = jax.jit(logp_fn, static_argnums=8)(params, key, composition, G, L, XYZ, A, W, False)
+        # Repeat composition to match the actual sampled batch size.
+        composition_batch = composition[None, :].repeat(n_sample, axis=0)
+        logp_g, logp_w, logp_xyz, logp_a, logp_l = jax.jit(logp_fn, static_argnums=8)(params, key, composition_batch, G, L, XYZ, A, W, False)
 
         data['logp_g'] = np.array(logp_g).tolist()
         data['logp_w'] = np.array(logp_w).tolist()
@@ -274,7 +274,7 @@ else:
         data['logp'] = np.array(sample_logp).tolist()
 
         actual_compositions = jax.vmap(find_composition_vector)(A, M)
-        formula_match = jnp.all(actual_compositions == composition, axis=1)
+        formula_match = jnp.all(actual_compositions == composition_batch, axis=1)
 
         if args.verbose>0:
             idx = jnp.argsort(G[formula_match])
