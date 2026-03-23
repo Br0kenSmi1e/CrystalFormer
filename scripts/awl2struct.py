@@ -116,6 +116,9 @@ def main(args):
     if args.formula is not None:
         input_path = args.output_path + f'output_{args.formula}.csv'
         output_path = args.output_path + f'output_{args.formula}_struct.csv'
+    elif args.label is not None:
+        input_path = args.output_path + f'output.csv'
+        output_path = args.output_path + f'output_{args.label}_struct.csv'
     else:
         input_path = args.output_path + f'output.csv'
         output_path = args.output_path + f'output_struct.csv'
@@ -161,6 +164,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--output_path', default='./', help='filepath of the output and input file')
     parser.add_argument('--formula', type=str, help='formula')
+    parser.add_argument('--label', default=None, help='output file label')
     parser.add_argument('--num_io_process', type=int, default=40, help='number of process used in multiprocessing io')
     args = parser.parse_args()
     main(args)
