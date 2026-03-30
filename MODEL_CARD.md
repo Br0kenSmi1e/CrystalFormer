@@ -48,4 +48,4 @@ params, transformer = make_transformer(
 
 ## Speeds, Sizes, Times
 - Both models contain ~13.8M parameters
-- Generating 29,000 crystal samples on a single A100 GPU takes ~1,058 seconds (~37 ms per sample)
+- Generating 45,000 crystal samples on a single A100 GPU takes ~440 seconds (~10 ms per sample)
