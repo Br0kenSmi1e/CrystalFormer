@@ -84,7 +84,7 @@ class MultiHeadAttention(hk.Module):
     self.dropout_rate = dropout_rate
 
     if w_init is None:
-      w_init = hk.initializers.VarianceScaling(w_init_scale)
+      w_init = hk.initializers.VarianceScaling(1.0)
     self.w_init = w_init
     self.with_bias = with_bias
     self.b_init = b_init
