@@ -1,41 +1,29 @@
+import ast
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-from pyxtal import pyxtal
-from pymatgen.core import Structure, Lattice
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from functools import partial
-import multiprocessing
-import os
+import spglib
+from pyxtal.lattice import Lattice as PyXtalLattice
+from pymatgen.core import Structure
 
-from crystalformer.src.wyckoff import mult_table
-from crystalformer.src.elements import element_list
+from crystalformer.src.layergroup import WYCKOFF_TYPES, wmax_table
 
-@jax.vmap
-def sort_atoms(W, A, X):
-    """
-    lex sort atoms according W, X, Y, Z
 
-    W: (n, )
-    A: (n, )
-    X: (n, dim) int
-    """
-    W_temp = jnp.where(W>0, W, 9999) # change 0 to 9999 so they remain in the end after sort
+def letter_to_number(letter: str) -> int:
+    if not letter or not letter.isalpha():
+        raise ValueError(f"Invalid Wyckoff letter: {letter!r}")
+    return ord(letter.lower()) - ord("a") + 1
 
-    X -= jnp.floor(X)
-    idx = jnp.lexsort((X[:,2], X[:,1], X[:,0], W_temp))
 
-    #assert jnp.allclose(W, W[idx])
-    A = A[idx]
-    X = X[idx]
-    return A, X
-
-def letter_to_number(letter):
-    """
-    'a' to 1 , 'b' to 2 , 'z' to 26, and 'A' to 27 
-    """
-    return ord(letter) - ord('a') + 1 if 'a' <= letter <= 'z' else 27 if letter == 'A' else None
+def _structure_from_cell_dict(value):
+    if isinstance(value, Structure):
+        return value
+    if isinstance(value, str):
+        parsed = ast.literal_eval(value)
+    else:
+        parsed = value
+    return Structure.from_dict(parsed)
 
 def shuffle(key, data):
     """
@@ -44,230 +32,86 @@ def shuffle(key, data):
     G, L, XYZ, A, W = data
     idx = jax.random.permutation(key, jnp.arange(len(L)))
     return G[idx], L[idx], XYZ[idx], A[idx], W[idx]
-    
-def process_one(cif, atom_types, wyck_types, n_max, tol=0.01):
-    """
-    # taken from https://anonymous.4open.science/r/DiffCSP-PP-8F0D/diffcsp/common/data_utils.py
-    Process one cif string to get G, L, XYZ, A, W
 
-    Args:
-      cif: cif string
-      atom_types: number of atom types
-      wyck_types: number of wyckoff types
-      n_max: maximum number of atoms in the unit cell
-      tol: tolerance for pyxtal
 
-    Returns:
-      G: space group number
-      L: lattice parameters
-      XYZ: fractional coordinates
-      A: atom types
-      W: wyckoff letters
-    """
-    try: crystal = Structure.from_str(cif, fmt='cif')
-    except: crystal = Structure.from_dict(eval(cif))
-    spga = SpacegroupAnalyzer(crystal, symprec=tol)
-    crystal = spga.get_refined_structure()
-    c = pyxtal()
-    try:
-        c.from_seed(crystal, tol=0.01)
-    except:
-        c.from_seed(crystal, tol=0.0001)
-    
-    g = c.group.number
-    num_sites = len(c.atom_sites)
-    assert (n_max > num_sites) # we will need at least one empty site for output of L params
+def process_layer_structure(structure, atom_types, wyck_types, n_max, tol=1e-5):
+    if wyck_types != WYCKOFF_TYPES:
+        raise ValueError(f"CrystalFormer-2D expects wyck_types={WYCKOFF_TYPES}")
 
-    print (g, c.group.symbol, num_sites)
-    natoms = 0
-    ww = []
-    aa = []
-    fc = []
-    ws = []
-    for site in c.atom_sites:
-        a = element_list.index(site.specie) 
-        x = site.position
-        m = site.wp.multiplicity
-        w = letter_to_number(site.wp.letter)
-        symbol = str(m) + site.wp.letter
-        natoms += site.wp.multiplicity
-        assert (a < atom_types)
-        assert (w < wyck_types)
-        assert (np.allclose(x, site.wp[0].operate(x)))
-        aa.append( a )
-        ww.append( w )
-        fc.append( x )  # the generator of the orbit
-        ws.append( symbol )
-        print ('g, a, w, m, symbol, x:', g, a, w, m, symbol, x)
-    idx = np.argsort(ww)
-    ww = np.array(ww)[idx]
-    aa = np.array(aa)[idx]
-    fc = np.array(fc)[idx].reshape(num_sites, 3)
-    ws = np.array(ws)[idx]
-    print (ws, aa, ww, natoms) 
+    cell = (
+        np.asarray(structure.lattice.matrix),
+        np.asarray(structure.frac_coords),
+        np.asarray([site.specie.Z for site in structure]),
+    )
+    dataset = spglib.get_layergroup(cell, aperiodic_dir=2, symprec=tol)
+    if dataset is None:
+        raise ValueError("spglib.get_layergroup could not assign a layer group")
 
-    aa = np.concatenate([aa,
-                        np.full((n_max - num_sites, ), 0)],
-                        axis=0)
+    g = int(dataset.number)
+    std_lattice = np.asarray(dataset.std_lattice)
+    std_positions = np.asarray(dataset.std_positions)
+    std_types = np.asarray(dataset.std_types)
+    equivalent_atoms = np.asarray(dataset.equivalent_atoms)
+    wyckoffs = np.asarray(dataset.wyckoffs)
 
-    ww = np.concatenate([ww,
-                        np.full((n_max - num_sites, ), 0)],
-                        axis=0)
-    fc = np.concatenate([fc, 
-                         np.full((n_max - num_sites, 3), 1e10)],
-                        axis=0)
-    
-    abc = np.array([c.lattice.a, c.lattice.b, c.lattice.c])/natoms**(1./3.)
-    angles = np.array([c.lattice.alpha, c.lattice.beta, c.lattice.gamma])
-    l = np.concatenate([abc, angles])
-    
-    print ('===================================')
+    site_rows = []
+    for orbit in sorted(set(equivalent_atoms.tolist())):
+        indices = np.where(equivalent_atoms == orbit)[0]
+        representative = int(indices[0])
+        wyckoff_index = letter_to_number(str(wyckoffs[representative]))
+        if wyckoff_index > int(wmax_table[g - 1]):
+            raise ValueError(f"Layer group {g} does not contain Wyckoff index {wyckoff_index}")
+        atom_number = int(std_types[representative])
+        if atom_number >= atom_types:
+            raise ValueError(f"Atomic number {atom_number} is outside atom_types={atom_types}")
+        site_rows.append((representative, atom_number, wyckoff_index, std_positions[representative]))
 
-    return g, l, fc, aa, ww 
-
-def GLXYZAW_from_file(csv_file, atom_types, wyck_types, n_max, num_workers=1):
-    """
-    Read cif strings from csv file and convert them to G, L, XYZ, A, W
-    Note that cif strings must be in the column 'cif'
-
-    Args:
-      csv_file: csv file containing cif strings
-      atom_types: number of atom types
-      wyck_types: number of wyckoff types
-      n_max: maximum number of atoms in the unit cell
-      num_workers: number of workers for multiprocessing
-
-    Returns:
-      G: space group number
-      L: lattice parameters
-      XYZ: fractional coordinates
-      A: atom types
-      W: wyckoff letters
-    """
-    if csv_file.endswith('.lmdb'):
-        import lmdb
-        import pickle
-        # read from lmdb
-        env = lmdb.open(
-            csv_file,
-            subdir=False,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False,
+    if len(site_rows) >= n_max:
+        raise ValueError(
+            f"Layer structure has {len(site_rows)} sites and requires n_max>{len(site_rows)} "
+            "to reserve a padded lattice-token slot"
         )
 
-        contents = env.begin().cursor().iternext()
-        data = tuple([pickle.loads(value) for _, value in contents])
-        G, L, XYZ, A, W = data
-        print('G:', G.shape)
-        print('L:', L.shape)
-        print('XYZ:', XYZ.shape)
-        print('A:', A.shape)
-        print('W:', W.shape)
-        return G, L, XYZ, A, W
+    site_rows = sorted(
+        site_rows,
+        key=lambda row: (row[2], row[3][0], row[3][1], row[3][2], row[1], row[0]),
+    )
 
-    data = pd.read_csv(csv_file)
-    try: cif_strings = data['cif']
-    except: cif_strings = data['structure']
+    pyxtal_lattice = PyXtalLattice.from_matrix(std_lattice)
+    natoms = max(len(std_types), 1)
+    lengths = np.array([pyxtal_lattice.a, pyxtal_lattice.b, pyxtal_lattice.c]) / natoms ** (1.0 / 3.0)
+    angles = np.array([pyxtal_lattice.alpha, pyxtal_lattice.beta, pyxtal_lattice.gamma])
+    lattice = np.concatenate([lengths, angles])
 
-    p = multiprocessing.Pool(num_workers)
-    partial_process_one = partial(process_one, atom_types=atom_types, wyck_types=wyck_types, n_max=n_max)
-    results = p.map_async(partial_process_one, cif_strings).get()
-    p.close()
-    p.join()
+    xyz = np.zeros((n_max, 3), dtype=float)
+    atoms = np.zeros((n_max,), dtype=int)
+    wyckoff_indices = np.zeros((n_max,), dtype=int)
+    for row_index, (_representative, atom_number, wyckoff_index, position) in enumerate(site_rows):
+        atoms[row_index] = atom_number
+        wyckoff_indices[row_index] = wyckoff_index
+        xyz[row_index] = position
 
-    G, L, XYZ, A, W = zip(*results)
-
-    G = jnp.array(G) 
-    A = jnp.array(A).reshape(-1, n_max)
-    W = jnp.array(W).reshape(-1, n_max)
-    XYZ = jnp.array(XYZ).reshape(-1, n_max, 3)
-    L = jnp.array(L).reshape(-1, 6)
-
-    A, XYZ = sort_atoms(W, A, XYZ)
-    
-    return G, L, XYZ, A, W
-
-def GLXA_to_structure_single(G, L, X, A):
-    """
-    Convert G, L, X, A to pymatgen structure. Do not use this function due to the bug in pymatgen.
-
-    Args:
-      G: space group number
-      L: lattice parameters
-      X: fractional coordinates
-      A: atom types
-    
-    Returns:
-      structure: pymatgen structure
-    """
-    lattice = Lattice.from_parameters(*L)
-    # filter out padding atoms
-    idx = np.where(A > 0)
-    A = A[idx]
-    X = X[idx]
-    structure = Structure.from_spacegroup(sg=G, lattice=lattice, species=A, coords=X).as_dict()
-
-    return structure
-
-def GLXA_to_csv(G, L, X, A, num_worker=1, filename='out_structure.csv'):
-
-    L = np.array(L)
-    X = np.array(X)
-    A = np.array(A)
-    p = multiprocessing.Pool(num_worker)
-    if isinstance(G, int):
-        G = np.array([G] * len(L))
-    structures = p.starmap_async(GLXA_to_structure_single, zip(G, L, X, A)).get()
-    p.close()
-    p.join()
-
-    data = pd.DataFrame()
-    data['cif'] = structures
-    header = False if os.path.exists(filename) else True
-    data.to_csv(filename, mode='a', index=False, header=header)
+    return g, lattice, xyz, atoms, wyckoff_indices
 
 
-if __name__=='__main__':
-    atom_types = 119
-    wyck_types = 28
-    n_max = 24
+def GLXYZAW_from_file(csv_file, atom_types, wyck_types, n_max, num_workers=1):
+    df = pd.read_csv(csv_file)
+    if "structure" not in df.columns and "cif" not in df.columns:
+        raise ValueError("Input CSV must contain either a 'structure' or 'cif' column")
 
-    import numpy as np 
-    np.set_printoptions(threshold=np.inf)
-    
-    csv_file = '../../data/mini.csv'
-    #csv_file = '/home/wanglei/cdvae/data/carbon_24/val.csv'
-    #csv_file = '/home/wanglei/cdvae/data/perov_5/val.csv'
-    #csv_file = '/home/user_wanglei/private/homefile/cdvae/data/mp_20/train.csv'
+    rows = []
+    for _idx, row in df.iterrows():
+        if "structure" in df.columns and not pd.isna(row["structure"]):
+            structure = _structure_from_cell_dict(row["structure"])
+        else:
+            structure = Structure.from_str(row["cif"], fmt="cif")
+        rows.append(process_layer_structure(structure, atom_types, wyck_types, n_max))
 
-    G, L, XYZ, A, W = GLXYZAW_from_file(csv_file, atom_types, wyck_types, n_max)
-    
-    print (G.shape)
-    print (L.shape)
-    print (XYZ.shape)
-    print (A.shape)
-    print (W.shape)
-    
-    #print ('L:\n',L)
-    #print ('XYZ:\n',XYZ)
-    print ('A:\n', A)
-
-
-    @jax.vmap
-    def lookup(G, W):
-        return mult_table[G-1, W] # (n_max, )
-    M = lookup(G, W) # (batchsize, n_max)
-    print ('M:\n', M)
-    print ('N:\n', M.sum(axis=-1))
-
-    from formula import find_composition_vector, formula_string
-    composition = jax.vmap(find_composition_vector)(A, M)
-    for i in range(len(A)):
-        formula = formula_string(composition[i])
-
-        print (formula)
-        print (composition[i])
-
-
+    G, L, XYZ, A, W = zip(*rows)
+    return (
+        np.asarray(G, dtype=int),
+        np.asarray(L, dtype=float),
+        np.asarray(XYZ, dtype=float),
+        np.asarray(A, dtype=int),
+        np.asarray(W, dtype=int),
+    )
