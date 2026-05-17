@@ -1,5 +1,9 @@
 from pathlib import Path
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
+    import tomli as tomllib
 
 
 def test_project_metadata_names_crystalformer_2d():
@@ -49,3 +53,22 @@ def test_layer_group_data_files_are_packaged():
     assert (data_dir / "layer_list.csv").is_file()
     assert (data_dir / "layer_symbols.csv").is_file()
     assert "Layer Group,Wyckoff Positions" in (data_dir / "layer_list.csv").read_text().splitlines()[0]
+
+
+def test_active_core_modules_do_not_import_spacegroup_or_formula_helpers():
+    active_core_paths = [
+        Path("main.py"),
+        Path("crystalformer/src/train.py"),
+        Path("crystalformer/src/transformer.py"),
+        Path("crystalformer/src/loss.py"),
+        Path("crystalformer/src/sample.py"),
+        Path("crystalformer/src/utils.py"),
+    ]
+    forbidden = [
+        "crystalformer.src." + name for name in ("wyckoff", "formula")
+    ] + ["topk_" + "recall"]
+
+    for path in active_core_paths:
+        text = path.read_text()
+        for pattern in forbidden:
+            assert pattern not in text, f"{path} still references {pattern}"

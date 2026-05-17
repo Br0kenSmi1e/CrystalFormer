@@ -7,8 +7,6 @@ import math
 
 from crystalformer.src.utils import shuffle
 import crystalformer.src.checkpoint as checkpoint
-from crystalformer.src.formula import find_composition_vector
-from crystalformer.src.wyckoff import mult_table
 
 
 shard = jax.pmap(lambda x: x)
@@ -31,16 +29,10 @@ def scatter(x: jnp.ndarray, retain_axis=False) -> jnp.ndarray:
 
 @jax.jit
 def add_composition_with_cfg_drop(key, data, cfg_drop_prob):
-    # compute composition vector and apply classifer-free guidance training
-    G, A, W = data[0], data[3], data[4]
-    M = jax.vmap(lambda g, w: mult_table[g-1, w], in_axes=(0, 0))(G, W) # (batchsize, n_max)
-    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, M)
-    # drop composition with probability cfg_drop_prob, set to zero vector
-    drop_mask = jax.random.uniform(key, (composition.shape[0],)) < cfg_drop_prob
-    composition = jnp.where(drop_mask[:, None], jnp.zeros_like(composition), composition)
-    data = (composition,) + data  # reconstruct data tuple with composition included
-
-    return data
+    del key, cfg_drop_prob
+    G = data[0]
+    layer_context = jnp.zeros((G.shape[0], 1), dtype=jnp.float32)
+    return (layer_context,) + data
 
 
 def train(key, optimizer, opt_state, loss_fn, params, epoch_finished, epochs, batchsize, train_data, valid_data, path, val_interval, cfg_drop_prob):
