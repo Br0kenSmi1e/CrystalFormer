@@ -2,30 +2,31 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-from crystalformer.src.von_mises import sample_von_mises
+from crystalformer.src.layergroup import LAYER_GROUP_COUNT, mult_table, symops
 from crystalformer.src.lattice import symmetrize_lattice
-from crystalformer.src.wyckoff import mult_table, symops
+from crystalformer.src.von_mises import sample_normal, sample_von_mises
 
 def project_xyz(g, w, x, idx):
     '''
-    apply the randomly sampled Wyckoff symmetry op to sampled fc, which 
-    should be (or close to) the first WP
+    apply the randomly sampled Wyckoff symmetry op to sampled fc, which
+    should be (or close to) the first WP. CrystalFormer-2D wraps x/y into
+    [0, 1), but leaves z non-periodic.
     '''
     op = symops[g-1, w, idx].reshape(3, 4)
     affine_point = jnp.array([*x, 1]) # (4, )
     x = jnp.dot(op, affine_point)  # (3, )
-    x -= jnp.floor(x)
+    x = x.at[:2].set(x[:2] - jnp.floor(x[:2]))
     return x 
 
-@partial(jax.vmap, in_axes=(None, None, None, 0, 0, 0, 0, 0, 0), out_axes=(0,0)) # batch 
-def inference(model, params, composition, G, W, A, X, Y, Z):
+@partial(jax.vmap, in_axes=(None, None, 0, 0, 0, 0, 0, 0), out_axes=0)
+def inference(model, params, G, W, A, X, Y, Z):
     XYZ = jnp.concatenate([X[:, None],
                            Y[:, None],
                            Z[:, None]
                            ], 
                            axis=-1)
-    M = mult_table[G-1, W]  
-    return model(params, None, composition, G, XYZ, A, W, M, False)
+    M = mult_table[G - 1, W]
+    return model(params, None, G, XYZ, A, W, M, False)
 
 def sample_top_p(key, logits, p, temperature):
     '''
@@ -55,13 +56,39 @@ def sample_x(key, h_x, Kx, top_p, temperature, batchsize):
     k = sample_top_p(key_k, x_logit, top_p, temperature)
     loc = loc.reshape(batchsize, Kx)[jnp.arange(batchsize), k]
     kappa = kappa.reshape(batchsize, Kx)[jnp.arange(batchsize), k]
-    kappa = jnp.clip(kappa, a_min=1e-6)  # to avoid numerical issue
+    kappa = jnp.clip(kappa, min=1e-6)  # to avoid numerical issue
     x = sample_von_mises(key_x, loc, kappa/temperature, (batchsize,))
     x = (x+ jnp.pi)/(2.0*jnp.pi) # wrap into [0, 1]
     return key, x 
 
 
-def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_mask, top_p, temperature, K=0, g=None, atom_mask=None, spg_mask=None):
+def sample_z(key, h_z, Kx, top_p, temperature, batchsize):
+    coord_types = 3 * Kx
+    z_logit, loc, precision = jnp.split(h_z[:, :coord_types], [Kx, 2 * Kx], axis=-1)
+    key, key_k, key_z = jax.random.split(key, 3)
+    k = sample_top_p(key_k, z_logit, top_p, temperature)
+    loc = loc.reshape(batchsize, Kx)[jnp.arange(batchsize), k]
+    precision = precision.reshape(batchsize, Kx)[jnp.arange(batchsize), k]
+    precision = jnp.clip(precision, min=1e-6)
+    z = sample_normal(key_z, loc, precision / temperature, (batchsize,))
+    return key, z
+
+
+def make_sample_crystal(
+    transformer,
+    n_max,
+    atom_types,
+    wyck_types,
+    Kx,
+    Kl,
+    w_mask,
+    top_p,
+    temperature,
+    layergroup,
+    atom_mask=None,
+):
+    if not 1 <= int(layergroup) <= LAYER_GROUP_COUNT:
+        raise ValueError("layergroup must be in [1, 80]")
 
     if atom_mask is None:
         user_atom_mask = jnp.ones((atom_types,), dtype=bool)
@@ -69,21 +96,16 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
         user_atom_mask = atom_mask.astype(bool)
 
     @partial(jax.jit, static_argnums=2)
-    def sample_crystal(key, params, batchsize, composition):
+    def sample_crystal(key, params, batchsize):
 
-        is_comp_provided = jnp.sum(composition) > 0
-        atom_mask = jnp.where(
-            is_comp_provided,
-            composition > 0,     # conditional
-            user_atom_mask       # unconditional
-        )
+        atom_mask = user_atom_mask
         atom_mask = atom_mask.at[0].set(True) # padding atom always allowed
            
         def body_fn(i, state):
             key, W, A, X, Y, Z, L = state 
 
             # (1) W 
-            w_logit = inference(transformer, params, composition, G, W, A, X, Y, Z)[1][:, 5*i] # (batchsize, output_size)
+            w_logit = inference(transformer, params, G, W, A, X, Y, Z)[:, 5*i] # (batchsize, output_size)
             w_logit = w_logit[:, :wyck_types]
         
             key, subkey = jax.random.split(key)
@@ -94,7 +116,7 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
             W = W.at[:, i].set(w)
 
             # (2) A
-            h_al = inference(transformer, params, composition, G, W, A, X, Y, Z)[1][:, 5*i+1] # (batchsize, output_size)
+            h_al = inference(transformer, params, G, W, A, X, Y, Z)[:, 5*i+1] # (batchsize, output_size)
             a_logit = h_al[:, :atom_types]
         
             key, subkey = jax.random.split(key)
@@ -106,7 +128,7 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
             L = L.at[:, i].set(lattice_params)
         
             # (3) X
-            h_x = inference(transformer, params, composition, G, W, A, X, Y, Z)[1][:, 5*i+2] # (batchsize, output_size)
+            h_x = inference(transformer, params, G, W, A, X, Y, Z)[:, 5*i+2] # (batchsize, output_size)
             key, x = sample_x(key, h_x, Kx, top_p, temperature, batchsize)
         
             # project to the first WP
@@ -119,7 +141,7 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
             X = X.at[:, i].set(x)
         
             # (4) Y
-            h_y = inference(transformer, params, composition, G, W, A, X, Y, Z)[1][:, 5*i+3] # (batchsize, output_size)
+            h_y = inference(transformer, params, G, W, A, X, Y, Z)[:, 5*i+3] # (batchsize, output_size)
             key, y = sample_x(key, h_y, Kx, top_p, temperature, batchsize)
             
             # project to the first WP
@@ -132,52 +154,25 @@ def make_sample_crystal(transformer, n_max, atom_types, wyck_types, Kx, Kl, w_ma
             Y = Y.at[:, i].set(y)
         
             # (5) Z
-            h_z = inference(transformer, params, composition, G, W, A, X, Y, Z)[1][:, 5*i+4] # (batchsize, output_size)
-            key, z = sample_x(key, h_z, Kx, top_p, temperature, batchsize)
-            
-            # project to the first WP
+            h_z = inference(transformer, params, G, W, A, X, Y, Z)[:, 5 * i + 4]
+            key, z = sample_z(key, h_z, Kx, top_p, temperature, batchsize)
             xyz = jnp.concatenate([X[:, i][:, None], 
                                     Y[:, i][:, None], 
                                     z[:, None], 
                                     ], axis=-1) 
             xyz = jax.vmap(project_xyz, in_axes=(0, 0, 0, None), out_axes=0)(G, w, xyz, 0) 
-            z = xyz[:, 2]
-            Z = Z.at[:, i].set(z)
+            Z = Z.at[:, i].set(xyz[:, 2])
 
             return key, W, A, X, Y, Z, L
             
         # we waste computation time by always working with the maximum length sequence, but we save compilation time
-        G = jnp.zeros((batchsize,), dtype=int)
+        G = jnp.zeros((batchsize,), dtype=int) + int(layergroup)
         W = jnp.zeros((batchsize, n_max), dtype=int)
         A = jnp.zeros((batchsize, n_max), dtype=int)
         X = jnp.zeros((batchsize, n_max))
         Y = jnp.zeros((batchsize, n_max))
         Z = jnp.zeros((batchsize, n_max))
         L = jnp.zeros((batchsize, n_max, Kl+2*6*Kl)) # we accumulate lattice params and sample lattice after
-        
-        #start from sampling the space group
-        g_logit = inference(transformer, params, composition, G, W, A, X, Y, Z)[0] # (batchsize, 230) actually should be same along batchsize axis 
-
-        if spg_mask is not None:
-            # enhance the probability of masked space groups 1 for allow, 0 for not allow
-            g_logit = g_logit + jnp.where(spg_mask[None, :], 0.0, -1e10)
-
-        #jax.debug.print("g_logit {g_logit}", g_logit=g_logit)
-            
-        if g is None: 
-            if K == 0: 
-                key, subkey = jax.random.split(key)
-                G = sample_top_p(subkey, g_logit, top_p, temperature) + 1
-            else:
-                offset = 0
-                # sample top K spacegroups uniformly in offset+1 to 230
-                g_logits_topk = jnp.argsort(-g_logit[0][offset:])[:K] 
-                jax.debug.print("{g}", g=g_logits_topk+offset+1)
-                key, subkey = jax.random.split(key)
-                sampled_indices = jax.random.randint(subkey, (batchsize,), 0, K)
-                G = g_logits_topk[sampled_indices] + offset + 1  
-        else: # one has specified the space group
-            G = jnp.zeros((batchsize,), dtype=int) + g
 
         key, W, A, X, Y, Z, L = jax.lax.fori_loop(0, n_max, body_fn, (key, W, A, X, Y, Z, L))
 
