@@ -230,3 +230,21 @@ def test_sampling_csv_batches_and_normalizes_lattice_for_logp(monkeypatch, tmp_p
         expected_lattice_for_logp = cli_main.norm_lattice(G, W, jnp.tile(physical_lattice[None, :], (G.shape[0], 1)))
         assert jnp.allclose(L_for_logp, expected_lattice_for_logp)
         assert not jnp.allclose(L_for_logp, jnp.tile(physical_lattice[None, :], (G.shape[0], 1)))
+
+
+from crystalformer.cli import classifier, cond_gen, train_dpo, train_ppo
+
+
+def test_unsupported_phase_one_commands_exit_with_clear_messages():
+    commands = [
+        (train_ppo.main, "PPO"),
+        (train_dpo.main, "DPO"),
+        (classifier.main, "classifier"),
+        (cond_gen.main, "formula-conditioned generation"),
+    ]
+
+    for command, label in commands:
+        with pytest.raises(SystemExit) as exc:
+            command([])
+        assert label in str(exc.value)
+        assert "not part of CrystalFormer-2D phase 1" in str(exc.value)
