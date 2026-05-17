@@ -7,7 +7,7 @@ import haiku as hk
 import numpy as np
 
 from crystalformer.src.attention import MultiHeadAttention
-from crystalformer.src.wyckoff import wmax_table, dof0_table
+from crystalformer.src.layergroup import LAYER_GROUP_COUNT, dof0_table, wmax_table
 
 def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key_size, model_size, embed_size, atom_types, wyck_types, dropout_rate, attn_dropout=0.1, widening_factor=4, sigmamin=1e-3):
     
@@ -24,11 +24,10 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         return h_x
 
     @hk.transform
-    def network(composition, G, XYZ, A, W, M, is_train):
+    def network(G, XYZ, A, W, M, is_train):
         '''
         Args:
-            composition: (atom_types, ) - Can be all zeros for unconditional generation
-            G: scalar integer for space group id 1-230
+            G: scalar integer for layer group id 1-80
             XYZ: (n, 3) fractional coordinates
             A: (n, )  element type 
             W: (n, )  wyckoff position index
@@ -49,31 +48,21 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         initializer = hk.initializers.TruncatedNormal(0.01)
 
         # compute embeddings
-        g_embeddings = hk.get_parameter('g_embedding_table', [230, embed_size], init=initializer)[G-1]
-        w_embeddings = hk.get_parameter('w_embedding_table', [wyck_types, embed_size], init=initializer)[W]
-        a_embedding_table = hk.get_parameter('a_embedding_table', [atom_types, embed_size], init=initializer)
+        with hk.experimental.name_scope("network"):
+            g_embeddings = hk.get_parameter(
+                "g_embedding_table", [LAYER_GROUP_COUNT, embed_size], init=initializer
+            )[G - 1]
+            context_embedding = hk.get_parameter("context_embedding", [embed_size], init=initializer)
+            w_embeddings = hk.get_parameter('w_embedding_table', [wyck_types, embed_size], init=initializer)[W]
+            a_embedding_table = hk.get_parameter('a_embedding_table', [atom_types, embed_size], init=initializer)
 
         a_embeddings = a_embedding_table[A] # (n, embed_size)
-
-        # compute composition embeddings in two ways: conditional and unconditional
-        c_embeddings_uncond = hk. get_parameter('c_embedding_uncond', [embed_size], init=initializer)
-        is_comp_provided = (jnp.sum(composition) > 0)
-        c_embeddings_cond = (a_embedding_table * composition[:, None]).sum(axis=0)
-
-        c_embeddings = jnp.where(is_comp_provided, c_embeddings_cond, c_embeddings_uncond)
-
-        g_logit = hk.Sequential([hk.Linear(h0_size, w_init=initializer),
-                                  jax.nn.gelu,
-                                  hk.Linear(230, w_init=initializer)]
-                                  )(c_embeddings)
-        # normalization
-        g_logit -= jax.scipy.special.logsumexp(g_logit) # (230, )
 
         # compute w_logits
         w_logit  = hk.Sequential([hk.Linear(h0_size, w_init=initializer),
                                  jax.nn.gelu,
                                   hk.Linear(wyck_types, w_init=initializer)]
-                                 )(jnp.concatenate([c_embeddings, g_embeddings], axis=0))
+                                 )(jnp.concatenate([context_embedding, g_embeddings], axis=0))
 
         # (1) the first atom should not be the pad atom
         # (2) mask out unavaiable position for the given spacegroup
@@ -88,41 +77,44 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
 
         mask = jnp.tril(jnp.ones((1, 5*n, 5*n))) # mask for the attention matrix
 
-        hW = jnp.concatenate([c_embeddings[None, :].repeat(n, axis=0),  # (n, embed_size) 
+        hW = jnp.concatenate([context_embedding[None, :].repeat(n, axis=0),  # (n, embed_size)
                               g_embeddings[None, :].repeat(n, axis=0),  # (n, embed_size)
                               w_embeddings,                             # (n, embed_size)
                               M.reshape(n, 1), # (n, 1)
                               ], axis=1) # (n, ...)
         hW = hk.Linear(model_size, w_init=initializer)(hW)  # (n, model_size)
 
-        hA = jnp.concatenate([c_embeddings[None, :].repeat(n, axis=0),  # (n, embed_size)
+        hA = jnp.concatenate([context_embedding[None, :].repeat(n, axis=0),  # (n, embed_size)
                               g_embeddings[None, :].repeat(n, axis=0),  # (n, embed_size)
                               a_embeddings,                             # (n, embed_size)
                              ], axis=1) # (n, ...)
         hA = hk.Linear(model_size, w_init=initializer)(hA)  # (n, model_size)
 
-        hX = jnp.concatenate([c_embeddings[None, :].repeat(n, axis=0), 
+        hX = jnp.concatenate([context_embedding[None, :].repeat(n, axis=0),
                               g_embeddings[None, :].repeat(n, axis=0), 
                              ] + 
                              [fn(2*jnp.pi*X[:, None]*f) for f in range(1, Nf+1) for fn in (jnp.sin, jnp.cos)]
                              , axis=1) # (n, ...)
         hX = hk.Linear(model_size, w_init=initializer)(hX)  # (n, model_size)
 
-        hY = jnp.concatenate([c_embeddings[None, :].repeat(n, axis=0), 
+        hY = jnp.concatenate([context_embedding[None, :].repeat(n, axis=0),
                               g_embeddings[None, :].repeat(n, axis=0), 
                              ] +
                              [fn(2*jnp.pi*Y[:, None]*f) for f in range(1, Nf+1) for fn in (jnp.sin, jnp.cos)]
                              , axis=1) # (n, ...)
         hY = hk.Linear(model_size, w_init=initializer)(hY)  # (n, model_size)
 
-        hZ = jnp.concatenate([c_embeddings[None, :].repeat(n, axis=0), 
-                              g_embeddings[None, :].repeat(n, axis=0), 
-                             ]+
-                             [fn(2*jnp.pi*Z[:, None]*f) for f in range(1, Nf+1) for fn in (jnp.sin, jnp.cos)]
-                             , axis=1) # (n, ...)
+        hZ = jnp.concatenate(
+            [
+                context_embedding[None, :].repeat(n, axis=0),
+                g_embeddings[None, :].repeat(n, axis=0),
+                Z[:, None],
+            ],
+            axis=1,
+        )
         hZ = hk.Linear(model_size, w_init=initializer)(hZ)  # (n, model_size)
 
-        # interleave the three matrices
+        # interleave the five token types
         h = jnp.concatenate([hW[:, None, :], 
                              hA[:, None, :],
                              hX[:, None, :],
@@ -211,18 +203,6 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
         a_logit = a_logit + jnp.where(a_mask, -1e10, 0.0)
         a_logit -= jax.scipy.special.logsumexp(a_logit, axis=1)[:, None] # normalization
 
-        # (5) atom should already in the formula (Conditional Generation vs Unconditional Generation)
-        # Create the mask that forbids atoms not in the composition (1 = banned, 0 = allowed)
-        # If composition is NOT provided, we set the mask to all zeros (allow everything).
-        comp_constraint_mask = jnp.where(composition==0, 1.0, 0.0) # (atom_types,)
-        effective_mask = jnp.where(is_comp_provided, comp_constraint_mask, jnp.zeros_like(comp_constraint_mask))
-        a_mask = effective_mask.reshape(1, atom_types).repeat(n, axis=0)
-
-        a_mask = a_mask.at[:, 0].set(0) # (n, atom_types) # mask = 1 for those locations to be masked out
-        a_logit = a_logit + jnp.where(a_mask, -1e10, 0.0)
-        a_logit -= jax.scipy.special.logsumexp(a_logit, axis=1)[:, None] # normalization
-      
-            
         w_logit = jnp.concatenate([w_logit, 
                                    jnp.zeros((n, output_size - wyck_types))
                                    ], axis = -1) 
@@ -253,17 +233,16 @@ def make_transformer(key, Nf, Kx, Kl, n_max, h0_size, num_layers, num_heads, key
 
         h = jnp.concatenate( [h0, h], axis = 0) # (5*n+1, output_size)
 
-        return g_logit, h
+        return h
  
     
-    composition = jnp.zeros((atom_types,), dtype=int)
-    G = jnp.array(123)
-    XYZ = jnp.zeros((n_max, 3), dtype=int) 
-    A = jnp.zeros((n_max, ), dtype=int) 
-    W = jnp.zeros((n_max, ), dtype=int) 
-    M = jnp.zeros((n_max, ), dtype=int) 
+    G = jnp.array(1)
+    XYZ = jnp.zeros((n_max, 3), dtype=float)
+    A = jnp.zeros((n_max,), dtype=int)
+    W = jnp.zeros((n_max,), dtype=int)
+    M = jnp.zeros((n_max,), dtype=int)
 
-    params = network.init(key, composition, G, XYZ, A, W, M, True)
+    params = network.init(key, G, XYZ, A, W, M, True)
     return params, network.apply
 
 def _layer_norm(x: jax.Array) -> jax.Array:
