@@ -104,6 +104,19 @@ def von_mises_logpdf(x, loc, concentration):
     return -(jnp.log(2 * jnp.pi) + jnp.log(jax.scipy.special.i0e(concentration))
               ) + concentration * (jnp.cos((x - loc) % (2 * jnp.pi)) - 1)
 
+def sample_normal(key, loc, precision, shape):
+    precision = jnp.clip(precision, min=1e-6)
+    return jax.random.normal(key, shape=shape) / jnp.sqrt(precision) + loc
+
+
+def normal_logpdf(x, loc, precision):
+    precision = jnp.clip(precision, min=1e-6)
+    return -0.5 * (
+        jnp.log(2.0 * jnp.pi)
+        - jnp.log(precision)
+        + precision * (x - loc) * (x - loc)
+    )
+
 if __name__=='__main__':
     key = jax.random.PRNGKey(42)
     loc = jnp.array([-1.0, 1.0, 0.0])
