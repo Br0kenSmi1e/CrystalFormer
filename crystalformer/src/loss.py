@@ -3,9 +3,9 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-from crystalformer.src.von_mises import von_mises_logpdf
+from crystalformer.src.layergroup import fc_mask_table, mult_table
 from crystalformer.src.lattice import make_lattice_mask
-from crystalformer.src.wyckoff import mult_table, fc_mask_table
+from crystalformer.src.von_mises import normal_logpdf, von_mises_logpdf
 
 
 def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0, lamb_w=1.0, lamb_l=1.0):
@@ -14,7 +14,7 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
       n_max: maximum number of atoms in the unit cell
       atom_types: number of atom types
       wyck_types: number of wyckoff types
-      Kx: number of von mises components for x, y, z
+      Kx: number of mixture components for coordinates
       Kl: number of Guassian mixture components for lattice parameters
       transformer: model
       lamb_a: weight for atom type loss
@@ -29,18 +29,24 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
     coord_types = 3*Kx
     lattice_mask = make_lattice_mask()
 
-    def compute_logp_x(h_x, X, fc_mask_x):
-        x_logit, loc, kappa = jnp.split(h_x, [Kx, 2*Kx], axis=-1)
-        x_loc = loc.reshape(n_max, Kx)
+    def compute_logp_periodic(h_x, X, fc_mask_x):
+        x_logit, loc, kappa = jnp.split(h_x, [Kx, 2 * Kx], axis=-1)
+        loc = loc.reshape(n_max, Kx)
         kappa = kappa.reshape(n_max, Kx)
-        logp_x = jax.vmap(von_mises_logpdf, (None, 1, 1), 1)((X-0.5)*2*jnp.pi, loc, kappa) # (n_max, Kx)
-        logp_x = jax.scipy.special.logsumexp(x_logit + logp_x, axis=1) # (n_max, )
-        logp_x = jnp.sum(jnp.where(fc_mask_x, logp_x, jnp.zeros_like(logp_x)))
+        logp_x = jax.vmap(von_mises_logpdf, (None, 1, 1), 1)((X - 0.5) * 2 * jnp.pi, loc, kappa)
+        logp_x = jax.scipy.special.logsumexp(x_logit + logp_x, axis=1)
+        return jnp.sum(jnp.where(fc_mask_x, logp_x, jnp.zeros_like(logp_x)))
 
-        return logp_x
+    def compute_logp_z(h_z, Z, fc_mask_z):
+        z_logit, loc, precision = jnp.split(h_z, [Kx, 2 * Kx], axis=-1)
+        loc = loc.reshape(n_max, Kx)
+        precision = precision.reshape(n_max, Kx)
+        logp_z = jax.vmap(normal_logpdf, (None, 1, 1), 1)(Z, loc, precision)
+        logp_z = jax.scipy.special.logsumexp(z_logit + logp_z, axis=1)
+        return jnp.sum(jnp.where(fc_mask_z, logp_z, jnp.zeros_like(logp_z)))
 
-    @partial(jax.vmap, in_axes=(None, None, 0, 0, 0, 0, 0, 0, None), out_axes=0) # batch 
-    def logp_fn(params, key, composition, G, L, XYZ, A, W, is_train):
+    @partial(jax.vmap, in_axes=(None, None, 0, 0, 0, 0, 0, None), out_axes=0) # batch
+    def logp_fn(params, key, G, L, XYZ, A, W, is_train):
         '''
         G: scalar 
         L: (6,) [a, b, c, alpha, beta, gamma] 
@@ -52,7 +58,7 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
         num_sites = jnp.sum(A!=0)
         M = mult_table[G-1, W]  # (n_max,) multplicities
 
-        g_logit, h = transformer(params, key, composition, G, XYZ, A, W, M, is_train) # (5*n_max+1, ...)
+        h = transformer(params, key, G, XYZ, A, W, M, is_train) # (5*n_max+1, ...)
         w_logit = h[0::5, :wyck_types] # (n_max+1, wyck_types) 
         w_logit = w_logit[:-1] # (n_max, wyck_types)
         a_logit = h[1::5, :atom_types] 
@@ -60,17 +66,15 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
         h_y = h[3::5, :coord_types]
         h_z = h[4::5, :coord_types]
 
-        logp_g = g_logit[G-1]
-
         logp_w = jnp.sum(w_logit[jnp.arange(n_max), W.astype(int)])
         logp_a = jnp.sum(a_logit[jnp.arange(n_max), A.astype(int)])
 
         X, Y, Z = XYZ[:, 0], XYZ[:, 1], XYZ[:,2]
 
         fc_mask = jnp.logical_and((W>0)[:, None], fc_mask_table[G-1, W]) # (n_max, 3)
-        logp_x = compute_logp_x(h_x, X, fc_mask[:, 0])
-        logp_y = compute_logp_x(h_y, Y, fc_mask[:, 1])
-        logp_z = compute_logp_x(h_z, Z, fc_mask[:, 2])
+        logp_x = compute_logp_periodic(h_x, X, fc_mask[:, 0])
+        logp_y = compute_logp_periodic(h_y, Y, fc_mask[:, 1])
+        logp_z = compute_logp_z(h_z, Z, fc_mask[:, 2])
 
         logp_xyz = logp_x + logp_y + logp_z
 
@@ -82,61 +86,25 @@ def make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer, lamb_a=1.0,
         logp_l = jax.scipy.special.logsumexp(l_logit[:, None] + logp_l, axis=0) # (6,)
         logp_l = jnp.sum(jnp.where((lattice_mask[G-1]>0), logp_l, jnp.zeros_like(logp_l)))
         
-        return logp_g, logp_w, logp_xyz, logp_a, logp_l
+        return logp_w, logp_xyz, logp_a, logp_l
 
     # https://github.com/google/jax/blob/cd6eeea9e3e8652e17fdbb1575c9a63fcd558d6b/jax/_src/ad_checkpoint.py#L73
     # This is a useful heuristic for transformers.
     # @partial(jax.checkpoint, policy=jax.checkpoint_policies.offload_dot_with_no_batch_dims, static_argnums=(7,))
     # @partial(jax.checkpoint, policy=jax.checkpoint_policies.dots_with_no_batch_dims_saveable, static_argnums=(7,))
-    def loss_fn(params, key, composition, G, L, XYZ, A, W, is_train):
-        logp_g, logp_w, logp_xyz, logp_a, logp_l = logp_fn(params, key, composition, G, L, XYZ, A, W, is_train)
+    def loss_fn(params, key, G, L, XYZ, A, W, is_train):
+        logp_w, logp_xyz, logp_a, logp_l = logp_fn(params, key, G, L, XYZ, A, W, is_train)
 
-        loss_g = -jnp.mean(logp_g)
         loss_w = -jnp.mean(logp_w)
         loss_xyz = -jnp.mean(logp_xyz)
         loss_a = -jnp.mean(logp_a)
         loss_l = -jnp.mean(logp_l)
 
-        return loss_g + loss_xyz + lamb_a* loss_a + lamb_w*loss_w + lamb_l*loss_l, (loss_g, loss_w, loss_a, loss_xyz, loss_l)
+        return loss_xyz + lamb_a * loss_a + lamb_w * loss_w + lamb_l * loss_l, (
+            loss_w,
+            loss_a,
+            loss_xyz,
+            loss_l,
+        )
         
     return loss_fn, logp_fn
-
-def topk_recall(logp_g, y, ks=(1,10,30,40)):
-    ranks = jnp.argsort(-logp_g, axis=1)  
-    out = {}
-    for k in ks:
-        hit = (ranks[:, :k] == y[:, None]).any(axis=1)
-        out[k] = hit.mean() * 100.0
-    return out
-
-if __name__=='__main__':
-    from utils import GLXYZAW_from_file
-    from transformer import make_transformer
-    from crystalformer.src.formula import find_composition_vector
-
-    atom_types = 119
-    n_max = 21
-    wyck_types = 28
-    Nf = 5
-    Kx = 16
-    Kl  = 4
-    dropout_rate = 0.1 
-
-    csv_file = '../../data/mini.csv'
-    G, L, XYZ, A, W = GLXYZAW_from_file(csv_file, atom_types, wyck_types, n_max)
-
-    key = jax.random.PRNGKey(42)
-
-    params, transformer = make_transformer(key, Nf, Kx, Kl, n_max, 128, 4, 4, 8, 16, 16, atom_types, wyck_types, dropout_rate) 
- 
-    loss_fn, _ = make_loss_fn(n_max, atom_types, wyck_types, Kx, Kl, transformer)
-
-    M = jax.vmap(lambda g, w: mult_table[g-1, w], in_axes=(0, 0))(G, W) # (batchsize, n_max)
-    composition = jax.vmap(find_composition_vector, (0, 0), 0)(A, M)
-    print("composition:", composition.shape)
-    
-    value = jax.jit(loss_fn, static_argnums=8)(params, key, composition[:1], G[:1], L[:1], XYZ[:1], A[:1], W[:1], True)
-    print (value)
-
-    value = jax.jit(loss_fn, static_argnums=8)(params, key, composition[:1], G[:1], L[:1], XYZ[:1]+1.0, A[:1], W[:1], True)
-    print (value)
