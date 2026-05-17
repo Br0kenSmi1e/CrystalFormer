@@ -104,12 +104,12 @@ def symmetrize_atoms_padded(g: int, w: int, x: jnp.ndarray) -> tuple[jnp.ndarray
     general_ops = symops[g - 1, w_max]
     affine_point = jnp.array([x[0], x[1], x[2], 1.0])
     coords = general_ops @ affine_point
-    coords = coords - jnp.floor(coords)
+    coords = coords.at[:, :2].set(coords[:, :2] - jnp.floor(coords[:, :2]))
 
     def dist_to_first_op(coord):
         projected = symops[g - 1, w, 0] @ jnp.array([coord[0], coord[1], coord[2], 1.0])
         diff = projected - coord
-        diff = diff - jnp.rint(diff)
+        diff = diff.at[:2].set(diff[:2] - jnp.rint(diff[:2]))
         return jnp.sum(diff**2)
 
     loc = jnp.argmin(jax.vmap(dist_to_first_op)(coords))
@@ -117,8 +117,9 @@ def symmetrize_atoms_padded(g: int, w: int, x: jnp.ndarray) -> tuple[jnp.ndarray
     m = mult_table[g - 1, w].astype(int)
     ops = symops[g - 1, w]
     expanded = ops @ jnp.array([generator[0], generator[1], generator[2], 1.0])
+    expanded = expanded.at[:, :2].set(expanded[:, :2] - jnp.floor(expanded[:, :2]))
     mask = jnp.arange(MULTIPLICITY_LCM) < m
-    return expanded - jnp.floor(expanded), mask
+    return expanded, mask
 
 
 def symmetrize_atoms(g: int, w: int, x: jnp.ndarray) -> jnp.ndarray:

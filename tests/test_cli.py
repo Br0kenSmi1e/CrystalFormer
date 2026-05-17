@@ -1,5 +1,6 @@
 import pytest
 import sys
+import subprocess
 from pathlib import Path
 from ast import literal_eval
 
@@ -232,7 +233,48 @@ def test_sampling_csv_batches_and_normalizes_lattice_for_logp(monkeypatch, tmp_p
         assert not jnp.allclose(L_for_logp, jnp.tile(physical_lattice[None, :], (G.shape[0], 1)))
 
 
-from crystalformer.cli import classifier, cond_gen, train_dpo, train_ppo
+from crystalformer.cli import classifier, cond_gen, dataset, train_dpo, train_ppo
+
+
+def test_dataset_cli_is_layer_phase_one(capsys):
+    parser = dataset.build_parser()
+    args = parser.parse_args(["--path", "data"])
+
+    assert args.wyck_types == 19
+    assert args.num_workers == 1
+
+    with pytest.raises(SystemExit) as exc:
+        dataset.main(["--help"])
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 0
+    assert "CrystalFormer-2D layer CSV preprocessing" in captured.out
+
+
+def test_dataset_help_does_not_import_preprocessing_stack():
+    command = [
+        sys.executable,
+        "-c",
+        "\n".join(
+            [
+                "import sys",
+                "from crystalformer.cli import dataset",
+                "try:",
+                "    dataset.main(['--help'])",
+                "except SystemExit:",
+                "    pass",
+                "for name in ['pandas', 'spglib', 'pyxtal', 'pymatgen', 'lmdb']:",
+                "    print(name, name in sys.modules)",
+            ]
+        ),
+    ]
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+
+    assert "pandas False" in result.stdout
+    assert "spglib False" in result.stdout
+    assert "pyxtal False" in result.stdout
+    assert "pymatgen False" in result.stdout
+    assert "lmdb False" in result.stdout
 
 
 def test_unsupported_phase_one_commands_exit_with_clear_messages():

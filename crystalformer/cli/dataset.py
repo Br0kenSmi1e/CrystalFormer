@@ -1,58 +1,38 @@
-import os
-import lmdb
-import pickle
-import numpy as np
-from crystalformer.src.utils import GLXYZAW_from_file
-import warnings
-warnings.filterwarnings("ignore")
+import argparse
+from pathlib import Path
 
 
-def csv_to_lmdb(csv_file, lmdb_file, args):
-    if os.path.exists(lmdb_file):
-        os.remove(lmdb_file)
-        print(f"Removed existing {lmdb_file}")
-
-    values = GLXYZAW_from_file(csv_file,
-                               atom_types=args.atom_types,
-                               wyck_types=args.wyck_types,
-                               n_max=args.n_max,
-                               num_workers=args.num_workers)
-    keys = np.arange(len(values[0]))
-
-    env = lmdb.open(
-        lmdb_file,
-        subdir=False,
-        readonly=False,
-        lock=False,
-        readahead=False,
-        meminit=False,
-        max_readers=1,
-        map_size=int(100e9),
-    )
-
-    with env.begin(write=True) as txn:
-        for key, value in zip(keys, values):
-            txn.put(str(key).encode("utf-8"), pickle.dumps(value))
-
-    print(f"Successfully converted {csv_file} to {lmdb_file}")
+def build_parser():
+    parser = argparse.ArgumentParser(description="CrystalFormer-2D layer CSV preprocessing")
+    parser.add_argument("--path", type=str, required=True, help="Directory containing split CSV files")
+    parser.add_argument("--splits", nargs="+", default=["train", "val", "test"])
+    parser.add_argument("--n_max", type=int, default=21)
+    parser.add_argument("--atom_types", type=int, default=119)
+    parser.add_argument("--wyck_types", type=int, default=19)
+    parser.add_argument("--num_workers", type=int, default=1)
+    return parser
 
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--n_max', type=int, default=21, help='The maximum number of atoms in the cell')
-    parser.add_argument('--atom_types', type=int, default=119, help='Atom types including the padded atoms')
-    parser.add_argument('--wyck_types', type=int, default=28, help='Number of possible multiplicites including 0')
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    from crystalformer.src.utils import GLXYZAW_from_file
 
-    parser.add_argument("--path", type=str, required=True)
-    parser.add_argument("--num_workers", type=int, default=40)
-    args = parser.parse_args()
+    root = Path(args.path)
 
-    for i in ["test", "val", "train"]:
-        csv_to_lmdb(
-            os.path.join(args.path, f"{i}.csv"), 
-            os.path.join(args.path, f"{i}.lmdb"),
-            args
+    for split in args.splits:
+        csv_file = root / f"{split}.csv"
+        if not csv_file.is_file():
+            raise SystemExit(f"Missing layer CSV: {csv_file}")
+        G, L, XYZ, A, W = GLXYZAW_from_file(
+            csv_file,
+            atom_types=args.atom_types,
+            wyck_types=args.wyck_types,
+            n_max=args.n_max,
+            num_workers=args.num_workers,
+        )
+        print(
+            f"{split}: G={G.shape} L={L.shape} XYZ={XYZ.shape} "
+            f"A={A.shape} W={W.shape}"
         )
 
 

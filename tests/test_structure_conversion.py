@@ -76,6 +76,30 @@ def test_row_to_structure_rejects_length_mismatch():
         )
 
 
+def test_row_to_structure_rejects_invalid_layer_group():
+    with pytest.raises(ValueError, match="Layer group"):
+        row_to_structure(
+            G=0,
+            L=[3.0, 4.0, 20.0, 90.0, 90.0, 90.0],
+            X=[[0.2, 0.3, 0.5]],
+            A=[6],
+            W=[1],
+            M=None,
+        )
+
+
+def test_row_to_structure_rejects_invalid_wyckoff_index():
+    with pytest.raises(ValueError, match="Wyckoff"):
+        row_to_structure(
+            G=1,
+            L=[3.0, 4.0, 20.0, 90.0, 90.0, 90.0],
+            X=[[0.2, 0.3, 0.5]],
+            A=[6],
+            W=[2],
+            M=None,
+        )
+
+
 def test_write_structures_from_samples_writes_csv_and_cif(tmp_path):
     sample_csv = tmp_path / "samples.csv"
     with sample_csv.open("w", newline="") as handle:

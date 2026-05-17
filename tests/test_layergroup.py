@@ -53,8 +53,15 @@ def test_symmetrize_atoms_uses_layer_group_tables():
     coords = symmetrize_atoms(2, 5, jnp.array([0.2, 0.3, 0.4]))
 
     assert coords.shape == (2, 3)
-    assert jnp.all(coords >= 0.0)
-    assert jnp.all(coords < 1.0)
+    assert jnp.all(coords[:, :2] >= 0.0)
+    assert jnp.all(coords[:, :2] < 1.0)
+
+
+def test_symmetrize_atoms_preserves_nonperiodic_z():
+    coords = symmetrize_atoms(1, 1, jnp.array([1.2, -0.3, 1.25]))
+
+    assert coords.shape == (1, 3)
+    assert jnp.allclose(coords[0], jnp.array([0.2, 0.7, 1.25]))
 
 
 def test_symmetrize_atoms_padded_is_jittable():
@@ -65,5 +72,5 @@ def test_symmetrize_atoms_padded_is_jittable():
     assert coords.shape == (MULTIPLICITY_LCM, 3)
     assert mask.shape == (MULTIPLICITY_LCM,)
     assert int(jnp.sum(mask)) == 2
-    assert jnp.all(coords >= 0.0)
-    assert jnp.all(coords < 1.0)
+    assert jnp.all(coords[:, :2] >= 0.0)
+    assert jnp.all(coords[:, :2] < 1.0)

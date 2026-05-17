@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from pymatgen.core import Lattice, Structure
 
-from crystalformer.src.layergroup import mult_table, symops
+from crystalformer.src.layergroup import LAYER_GROUP_COUNT, mult_table, symops, wmax_table
 
 
 def _as_array(value, dtype=float):
@@ -25,6 +25,10 @@ def canonicalize_layer_z(coords):
 
 
 def _validate_site_arrays(G, xyz, atoms, wyckoffs, multiplicities):
+    group = int(G)
+    if not 1 <= group <= LAYER_GROUP_COUNT:
+        raise ValueError(f"Layer group must be in [1, {LAYER_GROUP_COUNT}]")
+
     expected_shape = wyckoffs.shape
     if xyz.ndim != 2 or xyz.shape[1] != 3:
         raise ValueError("X must be a two-dimensional array with three coordinates per site")
@@ -33,7 +37,11 @@ def _validate_site_arrays(G, xyz, atoms, wyckoffs, multiplicities):
     if multiplicities is not None and multiplicities.shape != expected_shape:
         raise ValueError("M length must agree with W length")
 
-    expected_multiplicities = np.asarray(mult_table[int(G) - 1, wyckoffs], dtype=int)
+    max_wyckoff = int(wmax_table[group - 1])
+    if np.any((wyckoffs < 0) | (wyckoffs > max_wyckoff)):
+        raise ValueError(f"Wyckoff indices must be in [0, {max_wyckoff}] for layer group {group}")
+
+    expected_multiplicities = np.asarray(mult_table[group - 1, wyckoffs], dtype=int)
     if multiplicities is not None and not np.array_equal(multiplicities, expected_multiplicities):
         raise ValueError("supplied multiplicities do not match layer-group multiplicity table")
     return expected_multiplicities
