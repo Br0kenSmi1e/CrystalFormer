@@ -25,7 +25,9 @@ np.set_printoptions(threshold=np.inf)
 def build_parser():
     parser = argparse.ArgumentParser(description="CrystalFormer-2D fixed layer-group generation")
     parser.add_argument("--run_name", type=str, default="crystalformer-2d")
-    parser.add_argument("--data", type=str, default="data/mini.csv")
+    parser.add_argument("--train_path", type=str, default=None)
+    parser.add_argument("--valid_path", type=str, default=None)
+    parser.add_argument("--test_path", type=str, default=None)
     parser.add_argument("--optimizer", type=str, default="adamw", choices=["adamw", "none"])
     parser.add_argument("--restore_path", type=str, default=None)
     parser.add_argument("--save_path", type=str, default="ckpt")
@@ -33,6 +35,7 @@ def build_parser():
     parser.add_argument("--num_samples", type=int, default=1000)
     parser.add_argument("--batchsize", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--val_interval", type=int, default=100)
     parser.add_argument("--n_max", type=int, default=21)
     parser.add_argument("--atom_types", type=int, default=119)
     parser.add_argument("--wyck_types", type=int, default=19)
@@ -54,6 +57,11 @@ def build_parser():
 
 
 def validate_args(args):
+    if args.optimizer != "none":
+        if args.train_path is None:
+            raise SystemExit("--train_path is required when training")
+        if args.valid_path is None:
+            raise SystemExit("--valid_path is required when training")
     if args.optimizer == "none":
         if args.restore_path is None:
             raise SystemExit("--restore_path is required when --optimizer none")
@@ -88,11 +96,14 @@ def main(argv=None):
             raise SystemExit(f"Checkpoint at --restore_path {args.restore_path} is missing params")
     else:
         ckpt_filename, epoch_finished = None, 0
-        train_data = GLXYZAW_from_file(args.data, args.atom_types, args.wyck_types, args.n_max, num_io_process)
+        train_data = GLXYZAW_from_file(args.train_path, args.atom_types, args.wyck_types, args.n_max, num_io_process)
         train_groups = np.asarray(train_data[0])
         if np.any((train_groups < 1) | (train_groups > 80)):
             raise SystemExit("CrystalFormer-2D training data must use layergroup values in [1, 80]")
-        valid_data = train_data
+        valid_data = GLXYZAW_from_file(args.valid_path, args.atom_types, args.wyck_types, args.n_max, num_io_process)
+        valid_groups = np.asarray(valid_data[0])
+        if np.any((valid_groups < 1) | (valid_groups > 80)):
+            raise SystemExit("CrystalFormer-2D validation data must use layergroup values in [1, 80]")
         ckpt = {}
 
     params, transformer = make_transformer(
@@ -183,7 +194,7 @@ def main(argv=None):
             train_data,
             valid_data,
             output_path,
-            100,
+            args.val_interval,
             0.0,
         )
         return params, opt_state

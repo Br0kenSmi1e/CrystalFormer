@@ -14,6 +14,14 @@ Phase 1 supports:
 -> convert sampled AWXL rows to layer CIF structures
 ```
 
+Training follows the upstream CrystalFormer split convention: `t_loss` is computed from
+`--train_path`, and `v_loss` is computed from `--valid_path` every `--val_interval`
+epochs. Test-loss reporting is not part of phase 1.
+
+```bash
+python main.py --train_path train.csv --valid_path val.csv --val_interval 100
+```
+
 Sampling requires a fixed layer group:
 
 ```bash

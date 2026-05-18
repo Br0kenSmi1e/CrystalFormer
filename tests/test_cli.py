@@ -21,6 +21,9 @@ def test_help_mentions_layergroup_not_spacegroup(capsys):
 
     captured = capsys.readouterr()
     assert exc.value.code == 0
+    assert "--data" not in captured.out
+    assert "--train_path" in captured.out
+    assert "--valid_path" in captured.out
     assert "--layergroup" in captured.out
     assert "--spacegroup" not in captured.out
     assert "--formula" not in captured.out
@@ -52,7 +55,7 @@ def test_sampling_requires_layergroup_in_range():
 def test_unsupported_upstream_options_are_unrecognized():
     parser = build_parser()
 
-    for option in ("--spacegroup", "--formula", "--K", "--sym_group"):
+    for option in ("--data", "--spacegroup", "--formula", "--K", "--sym_group"):
         with pytest.raises(SystemExit):
             parser.parse_args([option, "1"])
 
@@ -153,9 +156,89 @@ def test_training_rejects_non_layergroup_data_before_train(monkeypatch, tmp_path
     monkeypatch.setattr(cli_main, "train", fail_train)
 
     with pytest.raises(SystemExit) as exc:
-        cli_main.main(["--data", "legacy.csv", "--save_path", str(tmp_path)])
+        cli_main.main(
+            [
+                "--train_path",
+                "legacy.csv",
+                "--valid_path",
+                "valid.csv",
+                "--save_path",
+                str(tmp_path),
+            ]
+        )
 
     assert "CrystalFormer-2D training data must use layergroup values in [1, 80]" in str(exc.value)
+
+
+def test_training_requires_explicit_train_and_valid_paths():
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        validate_args(parser.parse_args([]))
+    assert "--train_path is required when training" in str(exc.value)
+
+    with pytest.raises(SystemExit) as exc:
+        validate_args(parser.parse_args(["--train_path", "train.csv"]))
+    assert "--valid_path is required when training" in str(exc.value)
+
+
+def test_training_loads_distinct_train_and_valid_paths(monkeypatch, tmp_path):
+    paths = []
+
+    def fake_GLXYZAW_from_file(path, *_args):
+        paths.append(path)
+        group = 1 if path == "train.csv" else 2
+        return (
+            jnp.array([group]),
+            jnp.zeros((1, 6)),
+            jnp.zeros((1, 2, 3)),
+            jnp.zeros((1, 2), dtype=int),
+            jnp.zeros((1, 2), dtype=int),
+        )
+
+    def fake_train(
+        _key,
+        _optimizer,
+        _opt_state,
+        _loss_fn,
+        params,
+        _epoch_finished,
+        _epochs,
+        _batchsize,
+        train_data,
+        valid_data,
+        _output_path,
+        val_interval,
+        _cfg_drop_prob,
+    ):
+        assert train_data[0][0] == 1
+        assert valid_data[0][0] == 2
+        assert val_interval == 7
+        return params, object()
+
+    monkeypatch.setattr(cli_main.multiprocessing, "cpu_count", lambda: 1)
+    monkeypatch.setattr(cli_main, "GLXYZAW_from_file", fake_GLXYZAW_from_file)
+    monkeypatch.setattr(cli_main, "make_transformer", lambda *_args: (jnp.array([0.0]), object()))
+    monkeypatch.setattr(cli_main, "make_loss_fn", lambda *_args: (lambda *_loss_args: (0.0, (0.0, 0.0, 0.0, 0.0)), object()))
+    monkeypatch.setattr(cli_main.checkpoint, "find_ckpt_filename", lambda _path: (None, 0))
+    monkeypatch.setattr(cli_main, "train", fake_train)
+
+    cli_main.main(
+        [
+            "--train_path",
+            "train.csv",
+            "--valid_path",
+            "valid.csv",
+            "--save_path",
+            str(tmp_path),
+            "--batchsize",
+            "1",
+            "--val_interval",
+            "7",
+        ]
+    )
+
+    assert paths == ["train.csv", "valid.csv"]
 
 
 def test_sampling_csv_batches_and_normalizes_lattice_for_logp(monkeypatch, tmp_path):
