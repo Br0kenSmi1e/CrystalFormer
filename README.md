@@ -1,37 +1,54 @@
 # CrystalFormer-2D
 
-CrystalFormer-2D is a layer-group-specific fork of CrystalFormer for fixed layer group generation of 2D crystals.
+CrystalFormer-2D is a layer-group-only CLI tool for fixed-layergroup 2D crystal generation.
 
-The model treats fractional `x` and `y` as periodic coordinates and `z` as a non-periodic coordinate; generated structures use `pbc=[True, True, False]`.
-
-Phase 1 supports:
+The phase-1 workflow is:
 
 ```text
 2D/layer dataset
--> layer-group preprocessing
--> train P(W, A, X, Y, Z, L | layergroup)
--> sample with --layergroup
+-> train a layer-group-conditioned model
+-> sample with a fixed --layergroup
 -> convert sampled AWXL rows to layer CIF structures
 ```
 
-Training follows the upstream CrystalFormer split convention: `t_loss` is computed from
-`--train_path`, and `v_loss` is computed from `--valid_path` every `--val_interval`
-epochs. Test-loss reporting is not part of phase 1.
+The model uses layer groups `1` to `80`. Generated structures use `pbc=[True, True, False]`; fractional `x` and `y` are periodic, while `z` is treated as non-periodic.
+
+## Start Here
+
+- User-facing CLI workflow: [docs/CLI_QUICKSTART.md](docs/CLI_QUICKSTART.md)
+- Checkpoint policy and expected layout: [docs/CHECKPOINTS.md](docs/CHECKPOINTS.md)
+- Agent usage notes: [AGENTS.md](AGENTS.md)
+
+No released CrystalFormer-2D checkpoint is currently bundled. Sampling requires a trained checkpoint directory or checkpoint file passed with `--restore_path`.
+
+## Minimal Commands
+
+Install the package and console tools:
 
 ```bash
-python main.py --train_path train.csv --valid_path val.csv --val_interval 100
+pip install -e .
 ```
 
-Sampling requires a fixed layer group:
+Sample from a trained checkpoint:
 
 ```bash
-python main.py --optimizer none --restore_path RESTORE_PATH --layergroup 66 --num_samples 1000
+python main.py --optimizer none \
+  --restore_path PATH_TO_CHECKPOINT \
+  --layergroup 66 \
+  --num_samples 100 \
+  --save_path runs/lg66
 ```
 
-Convert sampled rows:
+Convert sampled rows to structures:
 
 ```bash
-crystalformer-2d-awl2struct samples.csv generated_structures --deduplicate
+crystalformer-2d-awl2struct \
+  runs/lg66/samples.csv \
+  runs/lg66/structures
 ```
 
-CrystalFormer-2D phase 1 does not include 3D space-group generation, formula conditioning, learned layergroup prediction, top-K group sampling, PPO, DPO, MCP, relaxation, energy ranking, novelty analysis, or plotting.
+## Scope
+
+CrystalFormer-2D phase 1 supports fixed-layergroup training, sampling, and AWXL-to-layer-structure conversion.
+
+It does not include 3D space-group generation, formula conditioning, learned layergroup prediction, top-K group sampling, PPO, DPO, MCP, relaxation, energy ranking, novelty analysis, or plotting.
