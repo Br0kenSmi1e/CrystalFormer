@@ -62,23 +62,21 @@ P(W_1, A_1, X_1, Y_1, Z_1, ..., W_n, A_n, X_n, Y_n, Z_n, L | layergroup)
 
 The model samples Wyckoff positions and atom types as categorical variables. Fractional `x` and `y` are periodic variables; `z` is non-periodic. Lattice parameters are sampled after the atom sequence ends.
 
-The atom sequence follows Wyckoff order, from higher-symmetry positions toward lower-symmetry positions. Sampling stops when the padding atom is produced, then the model samples lattice parameters.
+The atom sequence follows Wyckoff order, from higher-symmetry positions toward lower-symmetry positions. Padding atoms mark inactive sites; lattice parameters are sampled from the first padded position after active sites.
 
 During training, variables fixed by the layer group and Wyckoff position are masked out of the loss.
 
 ## Current CLI Status
 
-No default released CrystalFormer-2D checkpoint is currently bundled.
+The default CrystalFormer-2D checkpoint is bundled under `checkpoints/default`.
 
-Sampling requires a trained checkpoint directory or checkpoint file passed with `--restore_path`. If a user asks an agent to sample structures and does not provide a checkpoint, the agent should ask:
+Sampling requires a trained checkpoint directory or checkpoint file passed with `--restore_path`. Use `checkpoints/default` unless the user explicitly provides another checkpoint. If a user asks an agent to sample structures with a custom checkpoint but does not provide a path, the agent should ask:
 
 ```text
 Which CrystalFormer-2D checkpoint should I use for --restore_path?
 ```
 
 Agents should not guess checkpoint paths or use local experiment checkpoints for user-facing sampling unless the user explicitly chooses one.
-
-When a default checkpoint is added later, this README should be updated with the concrete `--restore_path` command.
 
 ## Install
 
@@ -102,19 +100,39 @@ Use `python main.py --optimizer none` for sampling:
 
 ```bash
 python main.py --optimizer none \
-  --restore_path PATH_TO_CHECKPOINT \
+  --restore_path checkpoints/default \
   --layergroup 66 \
   --num_samples 100 \
   --batchsize 64 \
-  --save_path runs/lg66
+  --save_path runs/lg66 \
+  --Nf 5 \
+  --Kx 16 \
+  --Kl 4 \
+  --n_max 21 \
+  --atom_types 119 \
+  --wyck_types 19 \
+  --h0_size 256 \
+  --num_layers 12 \
+  --num_heads 8 \
+  --key_size 32 \
+  --model_size 64 \
+  --embed_size 32 \
+  --dropout_rate 0.4 \
+  --attn_dropout 0.3
 ```
 
 Required arguments:
 
 - `--restore_path`: trained checkpoint directory or checkpoint file.
 - `--layergroup`: fixed layer group in `[1, 80]`.
+
+Common optional arguments:
+
 - `--num_samples`: number of sampled rows to write.
+- `--batchsize`: number of samples to generate per batch.
 - `--save_path`: output directory.
+
+The architecture flags in the example match `checkpoints/default/config.json`. Keep them consistent with the checkpoint being loaded.
 
 The command writes:
 
@@ -175,23 +193,17 @@ Use that run directory or a specific `epoch_XXXXXX.pkl` file as `--restore_path`
 
 ## Checkpoints
 
-When a released or demo checkpoint is added, use this layout:
+The bundled default checkpoint uses this layout:
 
 ```text
-checkpoints/<checkpoint-name>/
-  epoch_XXXXXX.pkl
+checkpoints/default/
+  epoch_000000.pkl
   config.json
-  README.md
-  SHA256SUMS
 ```
 
-`epoch_XXXXXX.pkl` is the model checkpoint.
+`epoch_000000.pkl` is the model checkpoint.
 
 `config.json` records the model flags needed to sample with the checkpoint, including values such as `Nf`, `Kx`, `Kl`, `n_max`, `h0_size`, `num_layers`, `num_heads`, `key_size`, `model_size`, `embed_size`, `dropout_rate`, and `attn_dropout`.
-
-`README.md` describes the training dataset, intended usage, recommended layer groups if applicable, and limitations.
-
-`SHA256SUMS` records checksums for released checkpoint files.
 
 CrystalFormer-2D checkpoints are Python pickle files. Only load checkpoints from trusted sources.
 
