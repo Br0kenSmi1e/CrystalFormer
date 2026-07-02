@@ -1,0 +1,16 @@
+{
+  "Nf": 5,
+  "Kx": 16,
+  "Kl": 4,
+  "n_max": 21,
+  "atom_types": 119,
+  "wyck_types": 19,
+  "h0_size": 256,
+  "num_layers": 12,
+  "num_heads": 8,
+  "key_size": 32,
+  "model_size": 64,
+  "embed_size": 32,
+  "dropout_rate": 0.4,
+  "attn_dropout": 0.3
+}
